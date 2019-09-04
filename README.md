@@ -12,6 +12,8 @@ made possible by initiating HTTP POST/GET requests to gather and submit configur
 All security features such as CSRF and syntax checks are left intact and changes appear exactly
 as they would via the WebConfigurator UI
 
+Supported pfSense builds: 2.3.x, 2.4.x, 2.5.x
+
 Syntax
 ------------
 - `pfsense-automator <pfSense IP or hostname> <COMMAND> <ARGUMENTS> -u <USERNAME> -p <PASSWORD>`
@@ -53,7 +55,7 @@ Commands
         - `<IPs or hostnames>` : Specify what IPs or hostnames to include in the alias. Multiple entries must be separated by a comma
 
 - `--check-auth` : Attempts to sign in using specified credentials. WARNING: abuse of this function will result in a WebConfigurator lockout
-    - Sytnax: `pfsense-automator <pfSense IP or hostname> --check-auth -u <username> -p <password>` 
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --check-auth -u <username> -p <password>` 
     - **Arguments**:
         - `-u <username>` : Allows you to pass in the username in the command, leave blank for interactive entry
         - `-p <password>` : Allows you to pass in a password in the command, leave blank for interactive entry
@@ -91,3 +93,7 @@ Commands
         - `<group_object>` : Specify object class used for groups in RFC2307 mode. Typically "posixGroup" or "group" (leave blank if `<rfc2307>` is `no`)
         - `<encode>` : Enable UTF-8 encoded queries (yes or no)
         - `<user_alt>` : Prevent LDAP from stripping anything after @ char in username (yes or no)   
+
+Disclaimer
+------------  
+pfSense®  is a trademark or service mark of ESF. This software (pfsense-automator) is not a monetized project in any way, and should only be used as a tool to aide licensed builds of pfSense. This software is not a product of ESF or Netgate and therefor contains no support from either entity. 
