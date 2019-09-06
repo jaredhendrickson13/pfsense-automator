@@ -15,7 +15,8 @@ import os
 import getpass
 import socket
 import signal
-import urllib.parse
+import requests
+
 
 # Variables
 firstArg = sys.argv[1] if len(sys.argv) > 1 else ""    # Declare 'firstArg' to populate the first argument passed in to the script
@@ -34,6 +35,7 @@ cookieLocation = "/tmp/cookie-" + currentDate + ".pf"    # Set the default cooki
 devnull = open("/dev/null", "w")    # Open file object pointing to /dev/null
 wcProtocol = "https"    # Assigns whether the script will use HTTP or HTTPS connections
 wcProtocolPort = 443 if wcProtocol == 'https' else 80    # If wcProtocol is set to https, assign a integer value to coincide
+req_session = requests.Session()    # Start our requests session
 
 ### FUNCTIONS ###
 # no_escape() Prevents SIGINT from killing the script unsafely
@@ -133,6 +135,36 @@ def get_exit_message(ec, server, command, data1, data2):
     exitMessage = ecd[command][ec]
     # Return our message
     return exitMessage
+
+# http_request() uses the requests module to make HTTP POST/GET requests
+def http_request(url, data, headers, method):
+    # Local Variables
+    resp_dict = {}    # Initialize response dictionary to return our response values
+    data = {} if type(data) != dict else data
+    headers = {} if type(headers) != dict else headers
+    method_list = ['GET', 'POST']    # Set a list of supported HTTP methods
+    # Check that our method is valid
+    if method.upper() in method_list:
+        # Process to run if a GET request was requested
+        if method.upper() == "GET":
+            req = req_session.get(url, headers=headers)
+        # Process to run if a POST request was requested
+        elif method.upper() == "POST":
+            # Try to open the connection and gather data
+            req = req_session.post(url, data=data, headers=headers)
+        # Populate our response dictionary with our response values
+        resp_dict["text"] = req.text  # Save our HTML text data
+        resp_dict["resp_code"] = req.status_code  # Save our response code
+        resp_dict["url"] = req.url    # Save our URL
+        resp_dict["resp_headers"] = req.headers  # Save our response headers
+        resp_dict["method"] = method.upper()    # Save our HTTP method
+        resp_dict['encoding'] = req.encoding    # Save our encode type
+        resp_dict['cookies'] = req.cookies    # Save our encode type
+        # Return our response dict
+        return resp_dict
+    # Return method error if method is invalid
+    else:
+        raise ValueError("invalid HTTP method `" + method + "`")
 
 # filter_input() sanitizes a string of special or otherwise malicious characters. Returns the formatted string.
 def filter_input(stf):
