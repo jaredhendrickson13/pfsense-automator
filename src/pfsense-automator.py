@@ -9,14 +9,13 @@
 
 # IMPORT MODULES
 import datetime
-import subprocess
 import sys
 import os
 import getpass
 import socket
 import signal
 import requests
-
+import urllib3
 
 # Variables
 firstArg = sys.argv[1] if len(sys.argv) > 1 else ""    # Declare 'firstArg' to populate the first argument passed in to the script
@@ -32,15 +31,15 @@ tenthArg = sys.argv[10] if len(sys.argv) > 10 else None    # Declare 'tenthArg' 
 localHostname = socket.gethostname()    # Gets the hostname of the system running pfsense-controller
 currentDate = datetime.datetime.now().strftime("%Y%m%d%H%M%S")    # Get the current date in a file supported format
 cookieLocation = "/tmp/cookie-" + currentDate + ".pf"    # Set the default cookie location
-devnull = open("/dev/null", "w")    # Open file object pointing to /dev/null
 wcProtocol = "https"    # Assigns whether the script will use HTTP or HTTPS connections
 wcProtocolPort = 443 if wcProtocol == 'https' else 80    # If wcProtocol is set to https, assign a integer value to coincide
 req_session = requests.Session()    # Start our requests session
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)    # Disable urllib warnings (suppress invalid cert warning)
 
 ### FUNCTIONS ###
 # no_escape() Prevents SIGINT from killing the script unsafely
 def no_escape(signum, frame):
-    sys.exit(1)
+    sys.exit(0)
 # Set the signal handler to prevent exiting the script without killing the tunnel
 signal.signal(signal.SIGINT, no_escape)
 
@@ -56,7 +55,8 @@ def get_exit_message(ec, server, command, data1, data2):
         "generic" : {
             "invalid_arg" : "Error: Invalid argument. Unknown action `" + data1 + "`",
             "connect_err" : "Error: Failed connection to " + server + ":" + str(wcProtocolPort),
-            "invalid_host" : "Error: Invalid hostname. Expected syntax: `pfsense-automator <HOSTNAME or IP> <COMMAND> <ARGS>`"
+            "invalid_host" : "Error: Invalid hostname. Expected syntax: `pfsense-automator <HOSTNAME or IP> <COMMAND> <ARGS>`",
+            "timeout" : "Error: connection timeout"
         },
         # Error/success messages for --add-dns flag
         "--add-dns" : {
@@ -147,11 +147,19 @@ def http_request(url, data, headers, method):
     if method.upper() in method_list:
         # Process to run if a GET request was requested
         if method.upper() == "GET":
-            req = req_session.get(url, headers=headers)
+            try:
+                req = req_session.get(url, headers=headers, verify=False, timeout=30)
+            except requests.exceptions.ReadTimeout:
+                print(get_exit_message("timeout", "", "generic", "", ""))
+                sys.exit(1)
         # Process to run if a POST request was requested
         elif method.upper() == "POST":
             # Try to open the connection and gather data
-            req = req_session.post(url, data=data, headers=headers)
+            try:
+                req = req_session.post(url, data=data, headers=headers, verify=False, timeout=30)
+            except requests.exceptions.ReadTimeout:
+                print(get_exit_message("timeout", "", "generic", "", ""))
+                sys.exit(1)
         # Populate our response dictionary with our response values
         resp_dict["text"] = req.text  # Save our HTML text data
         resp_dict["resp_code"] = req.status_code  # Save our response code
@@ -254,13 +262,15 @@ def check_remote_port(HOST,PORT):
     return portOpen
 
 # check_dns() checks the DNS server for existing A records
-def check_dns(server, host, type):
+def check_dns(server, user, key, host, domain):
     # Local Variables
     recordExists = False # Set return value False by default
-    digOutput = subprocess.check_output(["dig", "@" + server, host, type], stderr=devnull).decode('utf-8').split("->>HEADER<<-")[1].split("\n")[0].replace(" ", "")
-    # Check for data in dig output
-    if "status:NOERROR" in digOutput:
-        recordExists = True
+    recordDict = get_dns_entries(server, user, key)
+    # Check if domain is valid
+    if domain in recordDict["domains"]:
+        # Check if host entry exists
+        if host in recordDict["domains"][domain]:
+            recordExists = True
     #Return boolean
     return recordExists
 
@@ -279,21 +289,22 @@ def check_dns_rebind_error(httpResponse):
 def check_auth(server, user, key):
     # Local Variables
     authSuccess = False    # Set the default return value to false
+    url = wcProtocol + "://" + server    # Assign our base URL
+    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define a dictionary for our login POST data
     # Complete authentication
-    authCheck = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/index.php", "GET") + "&usernamefld="+ user + "&passwordfld=" + key + "&login=Sign In", "-X", "POST", "-k", wcProtocol + "://" + server + "/index.php"], stderr=devnull).decode('utf-8')
-    authSuccess = True if not "Username or Password incorrect" in authCheck else authSuccess    # Return false if login failed
-    ckStat = delete_cookies()    # Delete unneeded cookies
+    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
+    authSuccess = True if not "Username or Password incorrect" in authCheck["text"] else authSuccess    # Return false if login failed
     return(authSuccess)
 
 # get_csrf_token() makes an initial connection to pfSense to retrieve the CSRF token. This supports both GET and POST requests
 def get_csrf_token(url, type):
         # Local Variables
         csrfTokenLength = 55  # Set the expected token length of the csrf token
-        csrfResponse = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation, "-X", type, "-k", url], stderr=devnull).decode('utf-8')
+        csrfResponse = http_request(url, None, {}, type)
         # Parse CSRF token and conditionalize return value
-        csrfParsed = "sid:" + csrfResponse.split("sid:")[1].split(";")[0].replace(" ", "").replace("\n", "").replace("\"", "")
+        csrfParsed = "sid:" + csrfResponse['text'].split("sid:")[1].split(";")[0].replace(" ", "").replace("\n", "").replace("\"", "")
         csrfToken = csrfParsed if len(csrfParsed) is csrfTokenLength else ""    # Assign the csrfToken to the parsed value if the expected string length is found
-        return csrfToken
+        return csrfToken    # Return our token
 
 # delete_cookies() ensures the cookies generated during this sessions is removed and leaves a clean slate for the next task
 def delete_cookies():
@@ -308,43 +319,115 @@ def delete_cookies():
 def add_auth_server_ldap(server, user, key, descrName, ldapServer, ldapPort, transport, ldapProtocol, timeout, searchScope, baseDN, authContainers, extQuery, query, bindAnon, bindDN, bindPw, ldapTemplate, userAttr, groupAttr, memberAttr, rfc2307, groupObject, encode, userAlt):
     # Local Variables
     ldapAdded = 2    # Set return value to 2 by default (2 mean general failure)
+    url = wcProtocol + "://" + server    # Assign our base URL
+    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define a dictionary for our login POST data
+    defaultAttrs = {
+        "open" : {"user" : "cn", "group" : "cn", "member" : "member"},    # Assign default attributes for OpenLDAP
+        "msad" : {"user" : "samAccountName", "group" : "cn", "member" : "memberOf"},     # Assign default attributes for MS Active Directory
+        "edir" : {"user" : "cn", "group" : "cn", "member" : "uniqueMember"}}    # Assign default attributes for Novell eDirectory
+    # Define a dictionary for our LDAP server configuration POST data
+    addAuthServerData = {
+        "__csrf_magic": "",
+        "name": descrName,
+        "type": "ldap",
+        "ldap_host": ldapServer,
+        "ldap_port": str(ldapPort),
+        "ldap_urltype": transport,
+        "ldap_protver": ldapProtocol,
+        "ldap_timeout": timeout,
+        "ldap_scope": searchScope,
+        "ldap_basedn": baseDN,
+        "ldapauthcontainers": authContainers,
+        "ldap_extended_enabled": extQuery,
+        "ldap_extended_query": query,
+        "ldap_anon": bindAnon,
+        "ldap_binddn": bindDN,
+        "ldap_bindpw": bindPw,
+        "ldap_tmpltype": ldapTemplate,
+        "ldap_attr_user": userAttr if userAttr is not "" and userAttr is not "default" else defaultAttrs[ldapTemplate]['user'],
+        "ldap_attr_group": groupAttr if userAttr is not "" and userAttr is not "default" else defaultAttrs[ldapTemplate]['group'],
+        "ldap_attr_member": memberAttr if userAttr is not "" and userAttr is not "default" else defaultAttrs[ldapTemplate]['member'],
+        "ldap_rfc2307": rfc2307,
+        "ldap_attr_groupobj": groupObject,
+        "ldap_utf8": encode,
+        "ldap_nostrip_at": userAlt,
+        "save": "Save"
+    }
     # Complete authentication and check for errors, return exit code three if authentication failed
-    authCheck = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/index.php", "GET") + "&usernamefld="+ user + "&passwordfld=" + key + "&login=Sign In", "-X", "POST", "-k", wcProtocol + "://" + server + "/index.php"], stderr=devnull).decode('utf-8')
-    ldapAdded = 3 if "Username or Password incorrect" in authCheck else ldapAdded    # Return exit code 3 if login failed
-    ldapAdded = 10 if check_dns_rebind_error(authCheck) else ldapAdded    # Return exit code 10 if dns rebind error found
+    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
+    ldapAdded = 3 if "Username or Password incorrect" in authCheck['text'] else ldapAdded    # Return exit code 3 if login failed
+    ldapAdded = 10 if check_dns_rebind_error(authCheck['text']) else ldapAdded    # Return exit code 10 if dns rebind error found
     # Check that no errors have occurred so far (should be at 2)
     if ldapAdded == 2:
-        addAuthServer = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/system_authservers.php?act=new", "GET") + "&name=" + descrName + "&type=ldap&ldap_host=" + ldapServer + "&ldap_port=" + str(ldapPort) + "&ldap_protver=" + str(ldapProtocol) + "&ldap_timeout=" + str(timeout) + "&ldap_scope=" + searchScope + "&ldap_basedn=" + baseDN + "&ldapauthcontainers=" + authContainers + "&ldap_extended_enabled=" + extQuery + "&ldap_extended_query=" + query + "&ldap_anon=" + bindAnon + "&ldap_binddn=" + bindDN + "&ldap_bindpw=" + bindPw + "&ldap_tmpltype=" + ldapTemplate + "&ldap_attr_user=" + userAttr + "&ldap_attr_group=" + groupAttr + "&ldap_attr_member=" + memberAttr + "&ldap_rfc2307=" + rfc2307 + "&ldap_attr_groupobj=" + groupObject + "&ldap_utf8=" + encode + "&ldap_nostrip_at=" + userAlt + "&save=Save\"", "--data-urlencode", "ldap_urltype=" + transport, "-X", "POST", "-k", wcProtocol + "://" + server + "/system_authservers.php?act=new"], stderr=devnull).decode('utf-8')
+        # Update our CSRF token and submit our POST request
+        addAuthServerData["__csrf_magic"] = get_csrf_token(url + "/system_authservers.php?act=new", "GET")
+        addAuthServer = http_request(url + "/system_authservers.php?act=new", addAuthServerData, {}, "POST")
         ldapAdded = 0
     return ldapAdded
+
+def get_dns_entries(server, user, key):
+    # Local variables
+    getDnsCheck = 2    # Assign an int to track errors
+    url = wcProtocol + "://" + server    # Assign our base URL
+    dnsDict = {"domains" : {}}    # Initialize our DNS entry dictionary as empty
+    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define a dictionary for our login POST data
+    # Submit our login request
+    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
+    getDnsCheck = 3 if "Username or Password incorrect" in authCheck['text'] else getDnsCheck    # Return exit code 3 if login failed
+    getDnsCheck = 10 if check_dns_rebind_error(authCheck['text']) else getDnsCheck    # Return exit code 10 if dns rebind error found
+    # Check that login was successful
+    if getDnsCheck == 2:
+        # Pull our DNS entries
+        getDnsResp = http_request(url + "/services_unbound.php", {}, {}, "GET")
+        dnsBody = getDnsResp["text"].split("<tbody>")[1].split("</tbody>")[0]
+        dnsRows = dnsBody.split("<tr>")
+        # Cycle through our DNS rows to pull out individual values
+        for r in dnsRows:
+            # Try to parse our values into a dictionary
+            try:
+                host = r.split("<td>")[1].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
+                domain = r.split("<td>")[2].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
+                ip = r.split("<td>")[3].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
+                descr = r.split("<td>")[4].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
+                id = r.split("<td>")[5].split("?id=")[1].split("\">")[0].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
+                dnsDict["domains"][domain] = {} if not domain in dnsDict["domains"] else dnsDict["domains"][domain]
+                dnsDict["domains"][domain][host] = {"hostname" : host, "domain" : domain, "ip" : ip, "descr" : descr, "id" : id}
+            except IndexError:
+                pass
+    # Return our dictionary
+    return dnsDict
 
 # add_dns_entry() performs the necessary requests to add a DNS entry to pfSense's Unbound service
 def add_dns_entry(server, user, key, host, domain, ip, descr):
     # Local Variables
     recordAdded = 2    # Set return value to 2 by default (2 means failed)
+    url = wcProtocol + "://" + server    # Populate our base URL
+    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define our login POST data
+    dnsData = {"__csrf_magic": "","host" : host,"domain" : domain, "ip" : ip, "descr" : descr, "save" : "Save"}    # Define our DNS entry POST data
+    saveDnsData = {"__csrf_magic": "", "apply": "Apply Changes"}    # Define our apply DNS changes POST data
     # Check that DNS is available on this server
     if check_remote_port(server, 53):
         # Check if the record we are adding already exists
-        if not check_dns(server,host + "." + domain, "A"):
-            # Complete authentication
-            authCheck = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/index.php", "GET") + "&usernamefld="+ user + "&passwordfld=" + key + "&login=Sign In", "-X", "POST", "-k", wcProtocol + "://" + server + "/index.php"], stderr=devnull).decode('utf-8')
-            recordAdded = 3 if "Username or Password incorrect" in authCheck else recordAdded    # Return exit code 3 if login failed
-            recordAdded = 10 if check_dns_rebind_error(authCheck) else recordAdded    # Return exit code 10 if DNS rebind error was found
+        if not check_dns(server, user, key, host, domain):
+            # Complete authentication and check for errors, return exit code three if authentication failed
+            authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
+            recordAdded = 3 if "Username or Password incorrect" in authCheck['text'] else recordAdded  # Return exit code 3 if login failed
+            recordAdded = 10 if check_dns_rebind_error(authCheck['text']) else recordAdded  # Return exit code 10 if dns rebind error found
             if recordAdded == 2:
-                # Added DNS entry
-                subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/services_unbound_host_edit.php", "GET") + "&host=" + host + "&domain=" + domain + "&ip=" + ip + "&descr=" + descr + "&save=Save\"", "-X", "POST", "-k", wcProtocol + "://" + server + "/services_unbound_host_edit.php"], stderr=devnull).decode('utf-8')
-                # Save changes
-                subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/services_unbound.php", "GET") + "&apply=Apply Changes", "-X", "POST", "-k", wcProtocol + "://" + server + "/services_unbound.php"], stderr=devnull).decode('utf-8')
+                # Update our CSRF token and add our DNS entry
+                dnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound_host_edit.php", "GET")
+                dnsCheck = http_request(url + "/services_unbound_host_edit.php", dnsData, {}, "POST")
+                # Update our CSRF token and save changes
+                saveDnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound.php", "GET")
+                saveCheck = http_request(url + "/services_unbound.php", saveDnsData, {}, "POST")
                 # Check if a record is now present
-                if check_dns(server, host + "." + domain, "A"):
+                if check_dns(server, user, key, host, domain):
                     recordAdded = 0    # Set return variable 0 (0 means successfully added)
         else:
             recordAdded = 1    # Set return value to 1 (1 means record already existed when function started)
     # Return exit code 4 if we couldn't reach the DNS server
     else:
         recordAdded = 4    # Assign exit code 4 (DNS unreachable
-    # Remove cookies for this session
-    ckStat = delete_cookies()
     # Return exit code
     return recordAdded
 # get_ssl_certs() pulls the list of existing certificates on a pfSense host. This function basically returns the data found on /system_certmanager.php
@@ -352,14 +435,16 @@ def get_ssl_certs(server, user, key):
     # Local Variables
     certManagerList = []    # Initialize certManagerList to return our certificate values
     certIndex = 0    # Initialize certIndex to track the certificate number in the list/loop
+    url = wcProtocol + "://" + server    # Populate our base URL
+    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define our login POST data
     # Complete authentication and check for errors, return exit code three if authentication failed
-    authCheck = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/index.php", "GET") + "&usernamefld="+ user + "&passwordfld=" + key + "&login=Sign In", "-X", "POST", "-k", wcProtocol + "://" + server + "/index.php"], stderr=devnull).decode('utf-8')
-    authSuccess = False if "Username or Password incorrect" in authCheck else True    # Return exit code 3 if login failed
+    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
+    authSuccess = False if "Username or Password incorrect" in authCheck['text'] else True    # Return exit code 3 if login failed
     if authSuccess:
         # Save the GET data for /system_certmanager.php
-        getCertData = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation, "-X", "GET", "-k", wcProtocol + "://" + server + "/system_certmanager.php"], stderr=devnull).decode('utf-8')
-        if not check_dns_rebind_error(getCertData):
-            certRowList = getCertData.split("<tbody>")[1].split("</tbody>")[0].split("<tr>")
+        getCertData = http_request(url + "/system_certmanager.php", {}, {}, "GET")
+        if not check_dns_rebind_error(getCertData['text']):
+            certRowList = getCertData['text'].split("<tbody>")[1].split("</tbody>")[0].split("<tr>")
             # Cycle through each table row containing certificate info and parse accordingly
             # End format will be a multi-dimensional list. Example: list[[index, name, issuer, cn, start, end, serial]]
             for tr in certRowList:
@@ -400,27 +485,63 @@ def get_ssl_certs(server, user, key):
                     # Format the certificate data into a list, increase the counter after each loop
                     certManagerList.append([str(certIndex), certName, isr, cn, strDte, exp, srl, ciu])
                     certIndex = certIndex + 1
-    # Remove cookies for this session
-    ckStat = delete_cookies()
     # Return our data list
     return certManagerList
 
-    # For each certificate entry, parse the data
 # add_ssl_cert() performs the necessary requests to add an SSL certificate to pfSense's WebConfigurator
 def add_ssl_cert(server, user, key, cert, certkey, descr):
     # Local Variables
     certAdded = 2    # Set return value to 2 by default (2 means failed)
+    url = wcProtocol + "://" + server    # Populate our base URL
     preCertList = get_ssl_certs(server, user, key)    # Get the current list of certificate installed on pfSense
     preCertListLen = len(preCertList)    # Track the length of existing certificates in the list
+    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define our login POST data
+    # Define a dictionary for our SSL certificate POST data values
+    addCertData = {
+        "__csrf_magic" : "",
+        "method" : "import",
+        "descr" : descr,
+        "csrtosign" : "new",
+        "csrpaste" : "",
+        "keypaste" : "",
+        "csrsign_lifetime" : "3650",
+        "csrsign_digest_alg" : "sha256",
+        "keylen" : "2048",
+        "digest_alg" : "sha256",
+        "lifetime" : "3650",
+        "dn_country" : "US",
+        "dn_state" : "",
+        "dn_city" : "",
+        "dn_organization" : "",
+        "dn_organizationalunit" : "",
+        "dn_email" : "",
+        "dn_commonnam" : "",
+        "csr_keylen" : "2048",
+        "csr_digest_alg" : "sha256",
+        "csr_dn_country" : "US",
+        "csr_dn_state" : "",
+        "csr_dn_city" : "",
+        "csr_dn_organization" : "",
+        "csr_dn_organizationalunit" : "",
+        "csr_dn_email" : "",
+        "csr_dn_commonname" : "",
+        "certref" : "5d05eb4cb4d91",
+        "type" : "user",
+        "altname_type0" : "DNS",
+        "altname_value0" : "",
+        "cert" : cert,
+        "key" : certkey,
+        "save" : "Save"
+    }
     # Complete authentication and check for errors, return exit code three if authentication failed
-    authCheck = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/index.php", "GET") + "&usernamefld="+ user + "&passwordfld=" + key + "&login=Sign In", "-X", "POST", "-k", wcProtocol + "://" + server + "/index.php"], stderr=devnull).decode('utf-8')
-    certAdded = 3 if "Username or Password incorrect" in authCheck else certAdded    # Return exit code 3 if login failed
-    certAdded = 10 if check_dns_rebind_error(authCheck) else certAdded    # Return exit code 10 if dns rebind error found
+    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
+    certAdded = 3 if "Username or Password incorrect" in authCheck["text"] else certAdded    # Return exit code 3 if login failed
+    certAdded = 10 if check_dns_rebind_error(authCheck["text"]) else certAdded    # Return exit code 10 if dns rebind error found
     # Only proceed if an error has not occurred
     if certAdded == 2:
         # Add SSL cert and check for the added cert afterwards
-        postCheck = subprocess.check_output(["curl", "-v", "-b", cookieLocation, "-c", cookieLocation, "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/system_certmanager.php", "GET") + "&method=import&descr=" + descr + "&csrtosign=new&csrpaste=&keypaste=&csrsign_lifetime=3650&csrsign_digest_alg=sha256&keylen=2048&digest_alg=sha256&lifetime=3650&dn_country=US&dn_state=&dn_city=&dn_organization=&dn_organizationalunit=&dn_email=&dn_commonname=&csr_keylen=2048&csr_digest_alg=sha256&csr_dn_country=US&csr_dn_state=&csr_dn_city=&csr_dn_organization=&csr_dn_organizationalunit=&csr_dn_email=&csr_dn_commonname=&certref=5d05eb4cb4d91&type=user&altname_type0=DNS&altname_value0=&save=Save", "--data-urlencode", "cert=" + cert, "--data-urlencode", "key=" + certkey, "-X", "POST", "-k", wcProtocol + "://" + server + "/system_certmanager.php?act=new"], stderr=devnull).decode('utf-8')
-        successCheck = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation, "-X", "GET", "-k", wcProtocol + "://" + server + "/system_certmanager.php"], stderr=devnull).decode('utf-8').split("<tbody>")[1].split("</tbody>")[0].split("<tr>")
+        addCertData["__csrf_magic"] = get_csrf_token(url + "/system_certmanager.php?act=new", "GET")
+        postCheck = http_request(url + "/system_certmanager.php?act=new", addCertData, {}, "POST")
         postCertList = get_ssl_certs(server, user, key)  # Get the current list of certificate installed on pfSense
         postCertListLen = len(postCertList)  # Track the length of existing certificates in the list
         # Check if the list increased in size by one when we added a new certificate
@@ -428,67 +549,28 @@ def add_ssl_cert(server, user, key, cert, certkey, descr):
             # Check if our descr matches the new certificates name
             if descr == postCertList[postCertListLen - 1][1]:
                 certAdded = 0    # We now know the certificate that was added was the certificate intended
-    # Remove cookies for this session
-    ckStat = delete_cookies()
     # Return exit code
     return certAdded
-
-# get_firewall_alias_id() parses the HTML data to retrieve the pfAlias ID. Returns list [alias ID , exit code]
-def get_firewall_alias_id(server, user, key, aliasName):
-    # Local Variables
-    aliasId = ['',2]    # Assigns aliasId list. The first item value will populate our alias ID, the second item value will be our exit code integer
-    pfAliasPage = "firewall_aliases_edit.php?id="
-    targetTrData = []    # Define empty list for targetTrData, this will be populated later if data exists
-    # Complete authentication
-    authCheck = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/index.php", "GET") + "&usernamefld="+ user + "&passwordfld=" + key + "&login=Sign In", "-X", "POST", "-k", wcProtocol + "://" + server + "/index.php"], stderr=devnull).decode('utf-8')
-    aliasId[1] = 3 if "Username or Password incorrect" in authCheck else aliasId[1]    # Return exit code 3 if login failed
-    aliasId[1] = 10 if check_dns_rebind_error(authCheck) else aliasId[1]    # Return exit code 3 if login failed
-    # Check that authentication succeeded
-    if aliasId[1] == 2:
-        # Use GET to pull existing Firewall Aliases from pfSense
-        getPfAliasRaw = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/firewall_aliases.php", "GET"), "-X", "POST", "-k", wcProtocol + "://" + server + "/firewall_aliases.php"], stderr=devnull).decode('utf-8')
-        try:
-            targetDivData = getPfAliasRaw.split("<div class=\"table-responsive\">")[1].split("</div>")[0]    # Targets the "table-responsive" div on our page
-            targetTbodyData = targetDivData.split("<tbody>")[1].split("</tbody>")[0]    # Targets tbody data from div and saves it to a string
-            targetTrData = targetTbodyData.split("<tr>")    # Targets tr data from our tbody and splits it into a list
-        # We are only expecting IndexErrors here, except that error and return it's own exit code (1)
-        except IndexError:
-            aliasId[1] = 1    # Return exit code 1 meaning we were unable to find the specified alias name
-        # Check if we have at least one tr in our list
-        if len(targetTrData) > 0:
-            # Cycle through alias tables to test for our criteria
-            for tr in targetTrData:
-                if pfAliasPage in tr:
-                    targetTdData = tr.replace("\t", "").split("<td ondblclick")[1].split("</td>")[0]
-                    targetAliasName = targetTdData.split(";\">\n")[1]
-                    targetAliasId = targetTdData.split(pfAliasPage)[1].split("\';")[0]
-                    # Check if our aliasName matches the name in the table data
-                    if aliasName == targetAliasName:
-                        aliasId[0] = targetAliasId    # Assign our aliasId list value 0 to the matching aliasId
-                        aliasId[1] = 0    # Assign our aliasId list value 1 to integer 0 (success exit code)
-                        break    # We found our ID so we do not need to continue the loop
-                    # If not, return error code 4 (no alias found)
-                    else:
-                        aliasId[1] = 4    # Assign our aliasId list value 1 to integer 4 (no alias found)
-    # Return our aliasId List
-    return aliasId
 
 # set_wc_certificate() sets which WebConfigurator SSL certificate to use via /system_advanced_admin.php
 def set_wc_certificate(server, user, key, certName):
     # Local Variables
     wccCheck = 2    # Initialize wccCheck to track errors, this will be returned by the function
+    url = wcProtocol + "://" + server    # Populate our base URL
     selectedWcc = ""    # Initialize variable to track which certificate is currently selected
     newWcc = ""    # Initialize variable to track the certRef of our certificate to add
     wccFound = False    # Initialize boolean to track whether a certificate match has already occured
+    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define our login POST data
+    wccData = {"__csrf_magic" : "", "webguiproto" : wcProtocol, "ssl-certref" : ""}
     # Complete authentication and check for errors, return exit code three if authentication failed
-    authCheck = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/index.php", "GET") + "&usernamefld="+ user + "&passwordfld=" + key + "&login=Sign In", "-X", "POST", "-k", wcProtocol + "://" + server + "/index.php"], stderr=devnull).decode('utf-8')
-    wccCheck = 3 if "Username or Password incorrect" in authCheck else wccCheck    # Return exit code 3 if login failed
-    wccCheck = 10 if check_dns_rebind_error(authCheck) else wccCheck    # Return exit code 10 if DNS rebind
+    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
+    wccCheck = 3 if "Username or Password incorrect" in authCheck["text"] else wccCheck    # Return exit code 3 if login failed
+    wccCheck = 10 if check_dns_rebind_error(authCheck["text"]) else wccCheck    # Return exit code 10 if DNS rebind
     # Check that authentication was successful
     if wccCheck == 2:
         # Make GET request to /system_advanced_admin.php to check response, split the response and target the SSL cert selection HTML field
-        getSysAdvAdm = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation, "-X", "GET", "-k", wcProtocol + "://" + server + "/system_advanced_admin.php"], stderr=devnull).decode('utf-8')
-        getSysAdvAdmList = getSysAdvAdm.split("<select class=\"form-control\" name=\"ssl-certref\" id=\"ssl-certref\">")[1].split("</select>")[0].split("<option value=")
+        getSysAdvAdm = http_request(url + "/system_advanced_admin.php", {}, {}, "GET")
+        getSysAdvAdmList = getSysAdvAdm["text"].split("<select class=\"form-control\" name=\"ssl-certref\" id=\"ssl-certref\">")[1].split("</select>")[0].split("<option value=")
         # For each option in the selection box, check that the value is expected and parse the data
         for wcc in getSysAdvAdmList:
             # Remove trailing characters from wcc
@@ -518,9 +600,12 @@ def set_wc_certificate(server, user, key, certName):
         if wccFound:
             # Check if our certRef values are different (meaning we are actually changing the certificate)
             if newWcc != selectedWcc:
-                # Make our POST request and save a new GET request that should show our new configuration
-                postSysAdvAdm = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/system_advanced_admin.php", "GET") + "&webguiproto=https&ssl-certref=" + newWcc, "-X", "POST", "-k", wcProtocol + "://" + server + "/system_advanced_admin.php"], stderr=devnull).decode('utf-8')
-                checkSysAdvAdm = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation, "-X", "GET", "-k", wcProtocol + "://" + server + "/system_advanced_admin.php"], stderr=devnull).decode('utf-8').split("<select class=\"form-control\" name=\"ssl-certref\" id=\"ssl-certref\">")[1].split("</select>")[0].split("<option value=")
+                # Update our CSRF, certref, and take our POST request and save a new GET request that should show our new configuration
+                wccData["__csrf_magic"] = get_csrf_token(url + "/system_advanced_admin.php", "GET")
+                wccData["ssl-certref"] = newWcc
+                postSysAdvAdm = http_request(url + "/system_advanced_admin.php", wccData, {}, "POST")
+                checkSysAdvAdm = http_request(url + "/system_advanced_admin.php", {}, {}, "GET")["text"]
+                checkSysAdvAdm = checkSysAdvAdm.split("<select class=\"form-control\" name=\"ssl-certref\" id=\"ssl-certref\">")[1].split("</select>")[0].split("<option value=")
                 # Parse the new GET response to a list of HTML selection options
                 for wcc in checkSysAdvAdm:
                     # Try to split and parse the data to find the expected values
@@ -540,19 +625,61 @@ def set_wc_certificate(server, user, key, certName):
         # If we couldn't find the cert, and we didn't find multiple, return exit code 5
         elif not wccFound and wccCheck != 4:
             wccCheck = 5    # Returne exit code 5, certificate not found
-    # Remove cookies for this session
-    ckStat = delete_cookies()
     # Return our exit code
     return wccCheck
+
+# get_firewall_alias_id() parses the HTML data to retrieve the pfAlias ID. Returns list [alias ID , exit code]
+def get_firewall_alias_id(server, user, key, aliasName):
+    # Local Variables
+    aliasId = ['',2]    # Assigns aliasId list. The first item value will populate our alias ID, the second item value will be our exit code integer
+    url = wcProtocol + "://" + server    # Populate our base URL
+    pfAliasPage = "firewall_aliases_edit.php?id="    # Assign the base firewall > aliases page
+    targetTrData = []    # Define empty list for targetTrData, this will be populated later if data exists
+    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define our login POST data
+    # Complete authentication
+    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
+    aliasId[1] = 3 if "Username or Password incorrect" in authCheck["text"] else aliasId[1]    # Return exit code 3 if login failed
+    aliasId[1] = 10 if check_dns_rebind_error(authCheck["text"]) else aliasId[1]    # Return exit code 3 if login failed
+    # Check that authentication succeeded
+    if aliasId[1] == 2:
+        # Use GET to pull existing Firewall Aliases from pfSense
+        getPfAliasRaw = http_request(url + "/firewall_aliases.php", {}, {}, "GET")
+        try:
+            targetDivData = getPfAliasRaw["text"].split("<div class=\"table-responsive\">")[1].split("</div>")[0]    # Targets the "table-responsive" div on our page
+            targetTbodyData = targetDivData.split("<tbody>")[1].split("</tbody>")[0]    # Targets tbody data from div and saves it to a string
+            targetTrData = targetTbodyData.split("<tr>")    # Targets tr data from our tbody and splits it into a list
+        # We are only expecting IndexErrors here, except that error and return it's own exit code (1)
+        except IndexError:
+            aliasId[1] = 1    # Return exit code 1 meaning we were unable to find the specified alias name
+        # Check if we have at least one tr in our list
+        if len(targetTrData) > 0:
+            # Cycle through alias tables to test for our criteria
+            for tr in targetTrData:
+                if pfAliasPage in tr:
+                    targetTdData = tr.replace("\t", "").split("<td ondblclick")[1].split("</td>")[0]
+                    targetAliasName = targetTdData.split(";\">\n")[1]
+                    targetAliasId = targetTdData.split(pfAliasPage)[1].split("\';")[0]
+                    # Check if our aliasName matches the name in the table data
+                    if aliasName == targetAliasName:
+                        aliasId[0] = targetAliasId    # Assign our aliasId list value 0 to the matching aliasId
+                        aliasId[1] = 0    # Assign our aliasId list value 1 to integer 0 (success exit code)
+                        break    # We found our ID so we do not need to continue the loop
+                    # If not, return error code 4 (no alias found)
+                    else:
+                        aliasId[1] = 4    # Assign our aliasId list value 1 to integer 4 (no alias found)
+    # Return our aliasId List
+    return aliasId
 
 # modify_firewall_alias() takes and existing firewall alias and changes configured values within
 def modify_firewall_alias(server, user, key, aliasName, newValues):
     # Local Variables
     aliasIdData = get_firewall_alias_id(server, user, key, aliasName)    # Get the alias ID to determine which alias to modify
     aliasModded = 2 if aliasIdData[1] == 0 else aliasIdData[1]    # Default aliasModded to 2 if authentication didn't fail when we pulled the aliasIDData, otherwise return 3 (auth failed)
+    url = wcProtocol + "://" + server    # Populate our base URL
     # If we successfully pulled our aliasId
     if aliasIdData[0] != '' and aliasIdData[1] == 0:
         aliasIdValue = aliasIdData[0]   # Assign the actual alias ID value to a variable
+        aliasPostData = {"__csrf_magic" : get_csrf_token(wcProtocol + "://" + server + "/firewall_aliases_edit.php?id=" + aliasIdValue, "GET"), "name" : aliasName, "type" : "host", "tab" : "ip", "id" : aliasIdValue, "save" : "Save"}
         valueToAdd = ""    # Initialize our new alias entry values
         detailToAdd = ""   # Initializes our new alias entry description values
         defaultDetail = "Auto-added by " + user + " on " + localHostname    # Initializes our default alias entry description value
@@ -564,20 +691,19 @@ def modify_firewall_alias(server, user, key, aliasName, newValues):
             for val in newValueList:
                 # Only add the value if the list item is not emtpy
                 if val != '':
-                    valueToAdd = valueToAdd + "&address" + str(newValIndex) + "=" + val
-                    detailToAdd = detailToAdd + "&detail" + str(newValIndex) + "=" + defaultDetail
+                    aliasPostData["address" + str(newValIndex)] = val
+                    aliasPostData["detail" + str(newValIndex)] = defaultDetail
                     newValIndex = newValIndex + 1    # Increase our loop index
         # Else if our data did not need to be parsed
         else:
-            valueToAdd = "&address0=" + newValues
-            detailToAdd = "&detail0=" + defaultDetail
+            aliasPostData["address0"] = newValues
+            aliasPostData["detail0"] = defaultDetail
         # Make our post request if no errors were encountered
         if aliasModded == 2:
-            postPfAliasData = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/firewall_aliases_edit.php?id=" + aliasIdValue, "GET") + "&name=" + aliasName + valueToAdd + detailToAdd + "&type=host&tab=ip&id=" + aliasIdValue + "&save=Save", "-X", "POST", "-k", wcProtocol + "://" + server + "/firewall_aliases_edit.php"], stderr=devnull).decode('utf-8')
-            saveChanges = subprocess.check_output(["curl", "-b", cookieLocation, "-c", cookieLocation,  "-d", "__csrf_magic=" + get_csrf_token(wcProtocol + "://" + server + "/firewall_aliases.php", "GET") + "&apply=Apply Changes", "-X", "POST", "-k", wcProtocol + "://" + server + "/firewall_aliases.php"], stderr=devnull).decode('utf-8')
+            # Submit our post requests
+            postPfAliasData = http_request(url + "/firewall_aliases_edit.php", aliasPostData, {}, "POST")
+            saveChanges = http_request(url + "/firewall_aliases.php", {"__csrf_magic" : get_csrf_token(wcProtocol + "://" + server + "/firewall_aliases.php", "GET"), "apply" : "Apply Changes"}, {}, "POST")
             aliasModded = 0    # Assign our success exit code
-    # Delete cookies
-    ckStat = delete_cookies()
     # Return our integer exit code
     return aliasModded
 
