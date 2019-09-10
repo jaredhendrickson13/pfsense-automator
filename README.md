@@ -20,7 +20,7 @@ Syntax
 
 Commands
 ------------
-- `--add-dns` : Attempts to add a DNS entry to Unbound (DNS Resolver). This requires both TCP/443 and UDP/53 access from the host. 
+- `--add-dns` : Attempts to add a DNS entry to Unbound (DNS Resolver). This will not overwrite existing DNS entries
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-dns <subdomain> <primary_domain> <IP> <description>`
     - **Arguments**: 
         - `<subdomain>` : Specify the subdomain of the DNS entry (SUBDOMAIN.primarydomain.com)
