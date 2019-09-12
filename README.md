@@ -35,7 +35,7 @@ Commands
         - `--all` (`-a`) : Return all available DNS values including aliases
         - `--default` (`-d`) : Return only base entries, no aliases are included
         - `--host=<FQDN>` (beta) : Return only one entry given exact FQDN. If an alias matches the FQDN, the parent entry is printed             
-        - `--json=<directory_path>` : Exports SSL certificate data to a JSON file given an existing directory. This
+        - `--json=<directory_path>` : Exports SSL certificate data to a JSON file given an existing directory
 
 - `--add-sslcert` : Attempts to add a new external certificate to pfSense's Certificate Manager
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-sslcert <cert_file_path> <key_file_path> <cert_name>`
@@ -50,8 +50,7 @@ Commands
         - `<verbosity>`
             - `--verbose` : Includes all details about the certificates
             - `default` : Includes base info
-            - `--json=<directory_path>` : Exports SSL certificate data to a JSON file
-                - `<directory_path>` : Specifies the directory to save the exported JSON file to
+            - `--json=<directory_path>` : Exports SSL certificate data to a JSON file given an existing directory
 
 - `--set-wc-sslcert` : Sets the SSL certificate that the WebConfigurator will use
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --set-wc-sslcert <cert_name>`
