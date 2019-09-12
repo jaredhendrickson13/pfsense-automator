@@ -16,6 +16,7 @@ import socket
 import signal
 import requests
 import urllib3
+import json
 
 # Variables
 firstArg = sys.argv[1] if len(sys.argv) > 1 else ""    # Declare 'firstArg' to populate the first argument passed in to the script
@@ -49,6 +50,7 @@ def get_exit_message(ec, server, command, data1, data2):
     exitMessage = ""    # Define our return value as empty string
     globalDnsRebindMsg = "Error: DNS rebind detected. Ensure `" + server + "` is listed in System > Advanced > Alt. Hostnames"
     globalAuthErrMsg = "Error: Authentication failed"
+    globalPlatformErrMsg = "Error: `" + server + "` does not appear to be running pfSense"
     # Define our ERROR/SUCCESS message dictionary
     ecd = {
         # Generic error message that don't occur during commands
@@ -65,15 +67,30 @@ def get_exit_message(ec, server, command, data1, data2):
             2: "Error: Unexpected error adding `" + data1 + "." + data2  + "`",
             3 : globalAuthErrMsg,
             4 : "Error: DNS unreachable at " + server,
+            6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
             "invalid_ip" : "Error: Invalid IP address",
             "invalid_syntax" : "Error: Invalid arguments. Expected syntax: `pfsense-controller <SERVER> --add-dns <HOST> <DOMAIN> <IP> <DESCR>`"
+        },
+        # Error/success messages for --read-dns
+        "--read-dns" : {
+            0 : True,
+            2 : "Error: Unexpected error reading DNS Resolver configuration",
+            3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            "invalid_syntax" : "Error: Invalid arguments. Expected syntax: `pfsense-controller <SERVER> --read-dns <FILTER>`",
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err" : "Error: export directory `" + data1 + "` does not exist",
+            "export_success" : "Successfully exported DNS Resolver data to " + data1,
+            "export_fail" : "Failed to export DNS Resolver data as JSON"
         },
         # Error/success messages for --add-sslcert flag
         "--add-sslcert" : {
             0 : "SSL certificate successfully uploaded",
             2 : "Error: Failed to upload SSL certificate",
             3 : globalAuthErrMsg,
+            6: globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
             "no_cert" : "Error: No certificate file found at `" + data1 + "`",
             "no_key" : "Error: No key file found at `" + data1 + "`",
@@ -81,7 +98,13 @@ def get_exit_message(ec, server, command, data1, data2):
         },
         # Error/success messages for --read-sslcerts flag
         "--read-sslcerts" : {
-            "read_err" : "Error: failed to read SSL certificates from pfSense"
+            3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            "read_err" : "Error: failed to read SSL certificates from pfSense. You may not have any certificates installed",
+            "export_err" : "Error: export directory `" + data1 + "` does not exist",
+            "export_success" : "Successfully exported SSL certificate data to " + data1,
+            "export_fail" : "Failed to export SSL certificate data as JSON"
         },
         # Error/success messages for --check-auth flag
         "--check-auth" : {
@@ -92,9 +115,10 @@ def get_exit_message(ec, server, command, data1, data2):
         "--modify-alias" : {
             0 : "Alias `" + data1 +"` successfully updated",
             1 : "Error: Unable to parse alias `" + data1 + "`",
-            2: "Error: Unexpected error processing alias",
+            2 : "Error: Unexpected error processing alias",
             3 : globalAuthErrMsg,
             4 : "Error: Unable to locate alias `" + data1 + "`",
+            6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
             "invalid_syntax" : "Error: Invalid syntax - `pfsense-automator <pfSense IP or FQDN> --modify-alias <alias name> <alias values>`"
         },
@@ -106,6 +130,7 @@ def get_exit_message(ec, server, command, data1, data2):
             3 : globalAuthErrMsg,
             4 : "Error: SSL certificate `" + data1 + "` matches multiple certificates",
             5 : "Error: Certificate `" + data1 + "` not found",
+            6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
             "unknown_err" : "Error: An unknown error has occurred"
         },
@@ -114,6 +139,7 @@ def get_exit_message(ec, server, command, data1, data2):
             0 : "Successfully added LDAP server `" + data1 + "` on `" + server + "`",
             2 : "Error: Failed to configure LDAP server",
             3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
             "invalid_userAlt" : "Error: Invalid username alteration value `" + data1 + "`. Expected yes or no",
             "invalid_encode" : "Error: Invalid encode value `" + data1 + "`. Expected yes or no",
@@ -174,6 +200,16 @@ def http_request(url, data, headers, method):
     else:
         raise ValueError("invalid HTTP method `" + method + "`")
 
+# export_json() exports a Python dictionary as a JSON file
+def export_json(dictionary, jsonPath, jsonName):
+    # Open an export file and save our data
+    with open(jsonPath + jsonName, "w") as jf:
+        json.dump(dictionary, jf)
+    # Check that file now exists
+    jsonExported = True if os.path.exists(jsonPath + jsonName) else False
+    # Return our boolean
+    return jsonExported
+
 # filter_input() sanitizes a string of special or otherwise malicious characters. Returns the formatted string.
 def filter_input(stf):
     # Local Variables
@@ -211,6 +247,25 @@ def structure_whitespace(string, length, char, strict_length):
                 remLoop = remLoop + 1
     # Return our structured string
     return string
+
+# validate_platform()
+def validate_platform(url):
+    # Local variables
+    htmlStr = http_request(url, {}, {}, "GET")["text"]    # Get our HTML data
+    platformConfidence = 0    # Assign a integer confidence value
+    # List of platform dependent key words to check for
+    checkItems = [
+        "pfSense", "pfsense.org", "Login to pfSense", "pfsense-logo",
+        "netgate.com", "__csrf_magic", "ESF", "Netgate", "Rubicon Communications, LLC"
+    ]
+    # Loop through our list and add up a confidence score
+    for ci in checkItems:
+        # Check if our keyword is in the HTML string, if so add 10 to our confidence value
+        platformConfidence = platformConfidence + 10 if ci in htmlStr else platformConfidence
+    # Determine whether our confidence score is high enough to allow requests
+    platformConfirm = True if platformConfidence > 50 else False
+    # Return our bool
+    return platformConfirm
 
 # validate_ip() attempts to parse the IP into expected data. If the IP is not valid, false is returned.
 def validate_ip(ip):
@@ -275,8 +330,9 @@ def check_dns(server, user, key, host, domain):
     return recordExists
 
 # check_dns_rebind_error() checks if access to the webconfigurator is denied due to a DNS rebind error
-def check_dns_rebind_error(httpResponse):
+def check_dns_rebind_error(url):
     # Local Variables
+    httpResponse = http_request(url, {}, {}, "GET")["text"]    # Get the HTTP response of the URL
     rebindError = "Potential DNS Rebind attack detected"    # Assigns the error string to look for when DNS rebind error occurs
     rebindFound = False    # Assigns a boolean to track whether a rebind error was found. This is our return value
     # Check the HTTP response code for error message
@@ -306,21 +362,11 @@ def get_csrf_token(url, type):
         csrfToken = csrfParsed if len(csrfParsed) is csrfTokenLength else ""    # Assign the csrfToken to the parsed value if the expected string length is found
         return csrfToken    # Return our token
 
-# delete_cookies() ensures the cookies generated during this sessions is removed and leaves a clean slate for the next task
-def delete_cookies():
-    cookieDeleted = False    # Set initial return value to false. This will let us know if the cookie was actually removed
-    if os.path.exists(cookieLocation):
-        os.remove(cookieLocation)    # Remove the cookies known to this script
-        if not os.path.exists(cookieLocation):
-            cookieDeleted = True    # Set the return value to true if the cookie no longer exists
-    return cookieDeleted
-
 # add_auth_server_ldap() adds an LDAP server configuration to Advanced > User Mgr > Auth Servers
 def add_auth_server_ldap(server, user, key, descrName, ldapServer, ldapPort, transport, ldapProtocol, timeout, searchScope, baseDN, authContainers, extQuery, query, bindAnon, bindDN, bindPw, ldapTemplate, userAttr, groupAttr, memberAttr, rfc2307, groupObject, encode, userAlt):
     # Local Variables
     ldapAdded = 2    # Set return value to 2 by default (2 mean general failure)
     url = wcProtocol + "://" + server    # Assign our base URL
-    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define a dictionary for our login POST data
     defaultAttrs = {
         "open" : {"user" : "cn", "group" : "cn", "member" : "member"},    # Assign default attributes for OpenLDAP
         "msad" : {"user" : "samAccountName", "group" : "cn", "member" : "memberOf"},     # Assign default attributes for MS Active Directory
@@ -353,47 +399,72 @@ def add_auth_server_ldap(server, user, key, descrName, ldapServer, ldapPort, tra
         "ldap_nostrip_at": userAlt,
         "save": "Save"
     }
-    # Complete authentication and check for errors, return exit code three if authentication failed
-    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
-    ldapAdded = 3 if "Username or Password incorrect" in authCheck['text'] else ldapAdded    # Return exit code 3 if login failed
-    ldapAdded = 10 if check_dns_rebind_error(authCheck['text']) else ldapAdded    # Return exit code 10 if dns rebind error found
+    # Check for errors and assign exit codes accordingly
+    ldapAdded = 10 if check_dns_rebind_error(url) else ldapAdded    # Return exit code 10 if dns rebind error found
+    ldapAdded = 6 if not validate_platform(url) else ldapAdded    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if ldapAdded == 2:
+        ldapAdded = 3 if not check_auth(server, user, key) else ldapAdded    # Return exit code 3 if we could not sign in
     # Check that no errors have occurred so far (should be at 2)
     if ldapAdded == 2:
         # Update our CSRF token and submit our POST request
         addAuthServerData["__csrf_magic"] = get_csrf_token(url + "/system_authservers.php?act=new", "GET")
         addAuthServer = http_request(url + "/system_authservers.php?act=new", addAuthServerData, {}, "POST")
         ldapAdded = 0
+    # Return our exit code
     return ldapAdded
 
 def get_dns_entries(server, user, key):
     # Local variables
-    getDnsCheck = 2    # Assign an int to track errors
     url = wcProtocol + "://" + server    # Assign our base URL
-    dnsDict = {"domains" : {}}    # Initialize our DNS entry dictionary as empty
-    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define a dictionary for our login POST data
-    # Submit our login request
-    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
-    getDnsCheck = 3 if "Username or Password incorrect" in authCheck['text'] else getDnsCheck    # Return exit code 3 if login failed
-    getDnsCheck = 10 if check_dns_rebind_error(authCheck['text']) else getDnsCheck    # Return exit code 10 if dns rebind error found
+    dnsDict = {"domains" : {}, "ec" : 2}    # Initialize our DNS entry dictionary as empty
+    # Submit our intitial request and check for errors
+    dnsDict["ec"] = 10 if check_dns_rebind_error(url) else dnsDict["ec"]    # Return exit code 10 if dns rebind error found
+    dnsDict["ec"] = 6 if not validate_platform(url) else dnsDict["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if dnsDict["ec"] == 2:
+        dnsDict["ec"] = 3 if not check_auth(server, user, key) else dnsDict["ec"]    # Return exit code 3 if we could not sign in
     # Check that login was successful
-    if getDnsCheck == 2:
+    if dnsDict["ec"] == 2:
         # Pull our DNS entries
         getDnsResp = http_request(url + "/services_unbound.php", {}, {}, "GET")
         dnsBody = getDnsResp["text"].split("<tbody>")[1].split("</tbody>")[0]
         dnsRows = dnsBody.split("<tr>")
         # Cycle through our DNS rows to pull out individual values
         for r in dnsRows:
+            rInvalid = False    # Tracks if a valid record was identified
             # Try to parse our values into a dictionary
             try:
                 host = r.split("<td>")[1].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
                 domain = r.split("<td>")[2].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
                 ip = r.split("<td>")[3].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
-                descr = r.split("<td>")[4].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
+                descr = r.split("<td>")[4].replace("\t", "").replace("</td>", "").replace("\n", "").replace("<i class=\"fa fa-angle-double-right text-info\"></i>", "")
                 id = r.split("<td>")[5].split("?id=")[1].split("\">")[0].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
-                dnsDict["domains"][domain] = {} if not domain in dnsDict["domains"] else dnsDict["domains"][domain]
-                dnsDict["domains"][domain][host] = {"hostname" : host, "domain" : domain, "ip" : ip, "descr" : descr, "id" : id}
             except IndexError:
-                pass
+                rInvalid = True
+            # Check if entry is an alias
+            if not rInvalid:
+                # Check if IP contains the word ALIASFOR
+                if "Aliasfor" in ip:
+                    aliasFqdn = ip.split("Aliasfor")[1]    # Assign our alias FQDN
+                    aliasHost = None   # Declare a variable for our aliases parent hostname
+                    aliasDomain = None # Declare a variable for our aliases parent domain name
+                    # Loop through our domains and check if the Fqdn matches a domain
+                    for key,value in dnsDict["domains"].items():
+                        # Check what domain the alias is tied to
+                        if aliasFqdn.endswith(key):
+                            aliasDomain = key
+                            aliasHost = aliasFqdn.replace("." + aliasDomain, "")
+                            break
+                    # If we found our aliases parent domain and host
+                    if aliasHost is not None and aliasDomain is not None:
+                        dnsDict["domains"][aliasDomain][aliasHost]["alias"][host] = {"hostname" : host, "domain" : domain, "descr" : descr}
+                # Otherwise add our item normally
+                else:
+                    dnsDict["domains"][domain] = {} if not domain in dnsDict["domains"] else dnsDict["domains"][domain]
+                    dnsDict["domains"][domain][host] = {"hostname" : host, "domain" : domain, "ip" : ip, "descr" : descr, "id" : id, "alias" : {}}
+                # Set our exit code to 0
+                dnsDict["ec"] = 0
     # Return our dictionary
     return dnsDict
 
@@ -402,48 +473,47 @@ def add_dns_entry(server, user, key, host, domain, ip, descr):
     # Local Variables
     recordAdded = 2    # Set return value to 2 by default (2 means failed)
     url = wcProtocol + "://" + server    # Populate our base URL
-    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define our login POST data
     dnsData = {"__csrf_magic": "","host" : host,"domain" : domain, "ip" : ip, "descr" : descr, "save" : "Save"}    # Define our DNS entry POST data
     saveDnsData = {"__csrf_magic": "", "apply": "Apply Changes"}    # Define our apply DNS changes POST data
-    # Check that DNS is available on this server
-    if check_remote_port(server, 53):
-        # Check if the record we are adding already exists
-        if not check_dns(server, user, key, host, domain):
-            # Complete authentication and check for errors, return exit code three if authentication failed
-            authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
-            recordAdded = 3 if "Username or Password incorrect" in authCheck['text'] else recordAdded  # Return exit code 3 if login failed
-            recordAdded = 10 if check_dns_rebind_error(authCheck['text']) else recordAdded  # Return exit code 10 if dns rebind error found
-            if recordAdded == 2:
-                # Update our CSRF token and add our DNS entry
-                dnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound_host_edit.php", "GET")
-                dnsCheck = http_request(url + "/services_unbound_host_edit.php", dnsData, {}, "POST")
-                # Update our CSRF token and save changes
-                saveDnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound.php", "GET")
-                saveCheck = http_request(url + "/services_unbound.php", saveDnsData, {}, "POST")
-                # Check if a record is now present
-                if check_dns(server, user, key, host, domain):
-                    recordAdded = 0    # Set return variable 0 (0 means successfully added)
-        else:
-            recordAdded = 1    # Set return value to 1 (1 means record already existed when function started)
-    # Return exit code 4 if we couldn't reach the DNS server
+    # Check if the record we are adding already exists
+    if not check_dns(server, user, key, host, domain):
+        # Check for errors and assign exit codes accordingly
+        recordAdded = 10 if check_dns_rebind_error(url) else recordAdded    # Return exit code 10 if dns rebind error found
+        recordAdded = 6 if not validate_platform(url) else recordAdded    # Check that our URL appears to be pfSense
+        # Check if we have not encountered an error that would prevent us from authenticating
+        if recordAdded == 2:
+            recordAdded = 3 if not check_auth(server, user, key) else recordAdded    # Return exit code 3 if we could not sign in
+        # Check that no errors have occurred so far (should be at 2)
+        if recordAdded == 2:
+            # Update our CSRF token and add our DNS entry
+            dnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound_host_edit.php", "GET")
+            dnsCheck = http_request(url + "/services_unbound_host_edit.php", dnsData, {}, "POST")
+            # Update our CSRF token and save changes
+            saveDnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound.php", "GET")
+            saveCheck = http_request(url + "/services_unbound.php", saveDnsData, {}, "POST")
+            # Check if a record is now present
+            if check_dns(server, user, key, host, domain):
+                recordAdded = 0    # Set return variable 0 (0 means successfully added)
     else:
-        recordAdded = 4    # Assign exit code 4 (DNS unreachable
+        recordAdded = 1    # Set return value to 1 (1 means record already existed when function started)
     # Return exit code
     return recordAdded
 # get_ssl_certs() pulls the list of existing certificates on a pfSense host. This function basically returns the data found on /system_certmanager.php
 def get_ssl_certs(server, user, key):
     # Local Variables
-    certManagerList = []    # Initialize certManagerList to return our certificate values
+    certManagerDict = {"ec" : 2, "certs" : {}}     # Initialize certManagerDict to return our certificate values and exit codes
     certIndex = 0    # Initialize certIndex to track the certificate number in the list/loop
     url = wcProtocol + "://" + server    # Populate our base URL
-    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define our login POST data
-    # Complete authentication and check for errors, return exit code three if authentication failed
-    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
-    authSuccess = False if "Username or Password incorrect" in authCheck['text'] else True    # Return exit code 3 if login failed
-    if authSuccess:
+    # Submit our intitial request and check for errors
+    certManagerDict["ec"] = 10 if check_dns_rebind_error(url) else certManagerDict["ec"]    # Return exit code 10 if dns rebind error found
+    certManagerDict["ec"] = 6 if not validate_platform(url) else certManagerDict["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if certManagerDict["ec"] == 2:
+        certManagerDict["ec"] = 3 if not check_auth(server, user, key) else certManagerDict["ec"]    # Return exit code 3 if we could not sign in
+    if certManagerDict["ec"] == 2:
         # Save the GET data for /system_certmanager.php
         getCertData = http_request(url + "/system_certmanager.php", {}, {}, "GET")
-        if not check_dns_rebind_error(getCertData['text']):
+        if not check_dns_rebind_error(url):
             certRowList = getCertData['text'].split("<tbody>")[1].split("</tbody>")[0].split("<tr>")
             # Cycle through each table row containing certificate info and parse accordingly
             # End format will be a multi-dimensional list. Example: list[[index, name, issuer, cn, start, end, serial]]
@@ -481,21 +551,22 @@ def get_ssl_certs(server, user, key):
                     except Exception as x:
                         srl = ""
                     # Try to format table data to determine if certificate is in use, if the certifciate is in use
-                    ciu = "ACTIVE" if "<td>webConfigurator</td>" in tr.replace("\n", "").replace("\t", "").replace(" ", "") else ""
+                    ciu = True if "<td>webConfigurator</td>" in tr.replace("\n", "").replace("\t", "").replace(" ", "") else False
                     # Format the certificate data into a list, increase the counter after each loop
-                    certManagerList.append([str(certIndex), certName, isr, cn, strDte, exp, srl, ciu])
+                    certManagerDict["certs"][certIndex] = {"name" : certName, "issuer" : isr, "cn" : cn, "start" : strDte, "expire" : exp, "serial" : srl, "active" : ciu}
                     certIndex = certIndex + 1
-    # Return our data list
-    return certManagerList
+            # Assign exit code 0 if we have our dictionary populated
+            certManagerDict["ec"] = 0 if len(certManagerDict["certs"]) > 0 else certManagerDict["ec"]
+    # Return our data dict
+    return certManagerDict
 
 # add_ssl_cert() performs the necessary requests to add an SSL certificate to pfSense's WebConfigurator
 def add_ssl_cert(server, user, key, cert, certkey, descr):
     # Local Variables
     certAdded = 2    # Set return value to 2 by default (2 means failed)
     url = wcProtocol + "://" + server    # Populate our base URL
-    preCertList = get_ssl_certs(server, user, key)    # Get the current list of certificate installed on pfSense
-    preCertListLen = len(preCertList)    # Track the length of existing certificates in the list
-    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define our login POST data
+    preCertDict = get_ssl_certs(server, user, key)    # Get the current dict of certificate installed on pfSense
+    preCertDictLen = len(preCertDict["certs"])    # Track the length of existing certificates in the dict
     # Define a dictionary for our SSL certificate POST data values
     addCertData = {
         "__csrf_magic" : "",
@@ -533,21 +604,23 @@ def add_ssl_cert(server, user, key, cert, certkey, descr):
         "key" : certkey,
         "save" : "Save"
     }
-    # Complete authentication and check for errors, return exit code three if authentication failed
-    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
-    certAdded = 3 if "Username or Password incorrect" in authCheck["text"] else certAdded    # Return exit code 3 if login failed
-    certAdded = 10 if check_dns_rebind_error(authCheck["text"]) else certAdded    # Return exit code 10 if dns rebind error found
+     # Check for errors and assign exit codes accordingly
+    certAdded = 10 if check_dns_rebind_error(url) else certAdded    # Return exit code 10 if dns rebind error found
+    certAdded = 6 if not validate_platform(url) else certAdded    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if certAdded == 2:
+        certAdded = 3 if not check_auth(server, user, key) else certAdded    # Return exit code 3 if we could not sign in
     # Only proceed if an error has not occurred
     if certAdded == 2:
         # Add SSL cert and check for the added cert afterwards
         addCertData["__csrf_magic"] = get_csrf_token(url + "/system_certmanager.php?act=new", "GET")
         postCheck = http_request(url + "/system_certmanager.php?act=new", addCertData, {}, "POST")
-        postCertList = get_ssl_certs(server, user, key)  # Get the current list of certificate installed on pfSense
-        postCertListLen = len(postCertList)  # Track the length of existing certificates in the list
-        # Check if the list increased in size by one when we added a new certificate
-        if postCertListLen == preCertListLen + 1:
+        postCertDict = get_ssl_certs(server, user, key)  # Get the current dict of certificate installed on pfSense
+        postCertDictLen = len(postCertDict["certs"])  # Track the length of existing certificates in the dict
+        # Check if the dict increased in size by one when we added a new certificate
+        if postCertDictLen == preCertDictLen + 1:
             # Check if our descr matches the new certificates name
-            if descr == postCertList[postCertListLen - 1][1]:
+            if descr == postCertDict["certs"][postCertDictLen - 1]["name"]:
                 certAdded = 0    # We now know the certificate that was added was the certificate intended
     # Return exit code
     return certAdded
@@ -560,12 +633,13 @@ def set_wc_certificate(server, user, key, certName):
     selectedWcc = ""    # Initialize variable to track which certificate is currently selected
     newWcc = ""    # Initialize variable to track the certRef of our certificate to add
     wccFound = False    # Initialize boolean to track whether a certificate match has already occured
-    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define our login POST data
     wccData = {"__csrf_magic" : "", "webguiproto" : wcProtocol, "ssl-certref" : ""}
-    # Complete authentication and check for errors, return exit code three if authentication failed
-    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
-    wccCheck = 3 if "Username or Password incorrect" in authCheck["text"] else wccCheck    # Return exit code 3 if login failed
-    wccCheck = 10 if check_dns_rebind_error(authCheck["text"]) else wccCheck    # Return exit code 10 if DNS rebind
+     # Check for errors and assign exit codes accordingly
+    wccCheck = 10 if check_dns_rebind_error(url) else wccCheck    # Return exit code 10 if dns rebind error found
+    wccCheck = 6 if not validate_platform(url) else wccCheck    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if wccCheck == 2:
+        wccCheck = 3 if not check_auth(server, user, key) else wccCheck    # Return exit code 3 if we could not sign in
     # Check that authentication was successful
     if wccCheck == 2:
         # Make GET request to /system_advanced_admin.php to check response, split the response and target the SSL cert selection HTML field
@@ -635,11 +709,12 @@ def get_firewall_alias_id(server, user, key, aliasName):
     url = wcProtocol + "://" + server    # Populate our base URL
     pfAliasPage = "firewall_aliases_edit.php?id="    # Assign the base firewall > aliases page
     targetTrData = []    # Define empty list for targetTrData, this will be populated later if data exists
-    authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define our login POST data
-    # Complete authentication
-    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
-    aliasId[1] = 3 if "Username or Password incorrect" in authCheck["text"] else aliasId[1]    # Return exit code 3 if login failed
-    aliasId[1] = 10 if check_dns_rebind_error(authCheck["text"]) else aliasId[1]    # Return exit code 3 if login failed
+     # Check for errors and assign exit codes accordingly
+    aliasId[1] = 10 if check_dns_rebind_error(url) else aliasId[1]    # Return exit code 10 if dns rebind error found
+    aliasId[1] = 6 if not validate_platform(url) else aliasId[1]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if aliasId[1] == 2:
+        aliasId[1] = 3 if not check_auth(server, user, key) else aliasId[1]    # Return exit code 3 if we could not sign in
     # Check that authentication succeeded
     if aliasId[1] == 2:
         # Use GET to pull existing Firewall Aliases from pfSense
@@ -744,6 +819,95 @@ def main():
                 else:
                     print(get_exit_message("invalid_syntax", "", pfsenseAction, "", ""))
                     sys.exit(1)
+            # If user is trying to pull the DNS resolver configuration
+            if pfsenseAction == "--read-dns":
+                # Check if the minimum number of arguments was given
+                if len(sys.argv) > 3:
+                    # Action variables
+                    dnsFilter = thirdArg    # Save our sort filter
+                    user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")    # Parse passed in username, if empty, prompt user to enter one
+                    key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")    # Parse passed in passkey, if empty, prompt user to enter one
+                    dnsConfig = get_dns_entries(pfsenseServer, user, key)    # Pull our DNS resolver (unbound) configuration
+                    idHead = structure_whitespace("ID", 5, "-", True) + " "    # Format the table header ID column
+                    hostHead = structure_whitespace("HOST", 25, "-", True) + " "    # Format the table header host column
+                    domainHead = structure_whitespace("DOMAIN", 25, "-", True) + " "    # Format the table header domain column
+                    ipHead = structure_whitespace("IP", 15, "-", True) + " "    # Format the table header domain column
+                    descrHead = structure_whitespace("DESCRIPTION", 30, "-", True) + " "    # Format the table header description column
+                    # If our DNS configuration is empty
+                    if dnsConfig["ec"] == 0:
+                        # If user wants to export the data as JSON
+                        if dnsFilter.startswith("-j=") or dnsFilter.startswith("--json="):
+                            jsonPath = dnsFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                            jsonName = "pf-readdns-" + currentDate + ".json"    # Assign our default JSON name
+                            # Check if JSON path exists
+                            if os.path.exists(jsonPath):
+                                # Open an export file and save our data
+                                jsonExported = export_json(dnsConfig["domains"], jsonPath, jsonName)
+                                # Check if the file now exists
+                                if jsonExported:
+                                    print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                                else:
+                                    print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                    sys.exit(1)
+                            # Print error if path does not exist
+                            else:
+                                print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # If user wants to print all items
+                        elif dnsFilter.upper() in ("--ALL","-A") or dnsFilter.upper() in ("DEFAULT", "-D") or "--host=" in dnsFilter:
+                            # Format and print our header
+                            print(idHead + hostHead + domainHead + ipHead + descrHead)
+                            # Loop through each domain dictionary and pull out the host data
+                            for domainKey, domainValue in dnsConfig["domains"].items():
+                                # Loop through each host in the domain
+                                for hostKey, hostValue in domainValue.items():
+                                    # Loop Variables
+                                    host = structure_whitespace(hostValue["hostname"], 25, " ", True) + " "    # Format our host data
+                                    domain = structure_whitespace(hostValue["domain"], 25, " ", True) + " "    # Format our domain data
+                                    ip = structure_whitespace(hostValue["ip"], 15, " ", True) + " "    # Format our ip data
+                                    id = structure_whitespace(hostValue["id"], 5, " ", True) + " "    # Format our id data
+                                    descr = structure_whitespace(hostValue["descr"], 30, " ", True) + " "    # Format our description data
+                                    alias = ""    # Initialize our alias data as empty string. This will populate below if user requested ALL
+                                    # Check that user wants all info first
+                                    if dnsFilter.upper() == "--ALL" or "--host" in dnsFilter:
+                                        # Loop through our aliases and try to parse data if it exists
+                                        for aliasKey, aliasValue in hostValue["alias"].items():
+                                            try:
+                                                alias = alias + "      - Alias: " + aliasValue["hostname"] + "." + aliasValue["domain"] + "\n"
+                                            except KeyError:
+                                                alias = ""    # Assign empty string
+                                    # If we are only looking for one value
+                                    if "--host=" in dnsFilter:
+                                        aliasMatch = False    # Predefine aliasMatch. This will change to true if the FQDN matches an alias exactly
+                                        fqdnFilter = dnsFilter.replace("--host=", "").replace("-h=", "")    # Remove expected strings from argument to get our hostname filter
+                                        # Check if domain is our hostFilter
+                                        if fqdnFilter.endswith(hostValue["domain"]):
+                                            # Format our filter
+                                            domainFilter = hostValue["domain"]    # Save our matched domain
+                                            hostnameFilter = fqdnFilter.replace("." + domainFilter, "")    # Format our hostname portion
+                                            # Check if the hostname/alias matches our filter
+                                            if hostnameFilter in hostValue["alias"]:
+                                                # Check if our FQDN matches the alias
+                                                aliasValue = hostValue["alias"][hostnameFilter]
+                                                aliasMatch = True if aliasValue["hostname"] + "." + aliasValue["domain"] == fqdnFilter else False
+                                            if hostnameFilter == hostValue["hostname"] or aliasMatch:
+                                                print(id + host + domain + ip + descr)
+                                                print(alias.rstrip("\n")) if alias is not "" else None
+                                                break   # Break the loop as we found our match
+                                    # If we are looking for all values
+                                    else:
+                                        # Print our formatted data
+                                        print(id + host + domain + ip + descr)
+                                        print(alias.rstrip("\n")) if alias is not "" else None
+                            # If we did not match an expected filter
+                        else:
+                            print(get_exit_message("invalid_filter", "", pfsenseAction, dnsFilter, ""))
+                    # If our DNS config read failed
+                    else:
+                        print(get_exit_message(dnsConfig["ec"], pfsenseServer, pfsenseAction, "", ""))
+                # If we did not pass in the correct number of arguments
+                else:
+                    print(get_exit_message("invalid_syntax", pfsenseServer, pfsenseAction, "", ""))    # Print our error message
             # If user is trying to add an auth server, gather required configuration data from user
             elif pfsenseAction == "--add-ldapserver":
                 # Local variables
@@ -967,27 +1131,64 @@ def main():
                     sys.exit(1)
             # Assign functions for flag --modify-alias
             elif pfsenseAction == "--read-sslcerts":
-                verbosity = filter_input(thirdArg)
+                verbosity = thirdArg    # Assign our verbosity mode to thirdArgs value
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
-                getCertData = get_ssl_certs(pfsenseServer, user, key)    # Save the function output list for use later
-                # Check if data was returned
-                if len(getCertData) > 0:
-                    # Format header
-                    if verbosity == "-v":
-                        print(structure_whitespace("#", 3, "-", False) + " " + structure_whitespace("NAME", 37, "-", True) + " " + structure_whitespace("ISSUER", 11, "-", True) + " " + structure_whitespace("CN", 25, "-", True) + " " + structure_whitespace("VALID FROM", 25, "-", True) + " " + structure_whitespace("VALID UNTIL", 25, "-", True) + " " + structure_whitespace("SERIAL", 30, "-", True) + " " + "IN USE")
-                    else:
-                        print(structure_whitespace("#", 3, "-", False) + " " + structure_whitespace("NAME", 37, "-", True) + " " + structure_whitespace("ISSUER", 11, "-", True) + " " + structure_whitespace("CN", 25, "-", True) + " " + structure_whitespace("VALID UNTIL", 25, "-", True) + " " + "IN USE")
-                    # For each certificate found in the list, print the information
-                    for cert in getCertData:
-                        if verbosity == "-v":
-                            print(structure_whitespace(cert[0], 3, " ", False) + " " + structure_whitespace(cert[1], 37, " ", True) + " " + structure_whitespace(cert[2], 11, " ", True) + " " + structure_whitespace(cert[3], 25, " ", True) + " " + structure_whitespace(cert[4].replace("_", " "), 25, " ", True) + " " + structure_whitespace(cert[5].replace("_", " "), 25, " ", True) + " " + structure_whitespace(cert[6], 30, " ", True) + " " + cert[7])
+                getCertData = get_ssl_certs(pfsenseServer, user, key)    # Save the function output dict for use later
+                # Check that we did not receive an error
+                if getCertData["ec"] == 0:
+                    # Check if data was returned
+                    if len(getCertData["certs"]) > 0:
+                        # Check if JSON mode was selected
+                        if verbosity.startswith("-j=") or verbosity.startswith("--json="):
+                            jsonPath = verbosity.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                            jsonName = "pf-readsslcerts-" + currentDate + ".json"    # Assign our default JSON name
+                            # Check if JSON path exists
+                            if os.path.exists(jsonPath):
+                                # Open an export file and save our data
+                                jsonExported = export_json(getCertData["certs"], jsonPath, jsonName)
+                                # Check if the file now exists
+                                if jsonExported:
+                                    print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                                else:
+                                    print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                    sys.exit(1)
+                            # Print error if path does not exist
+                            else:
+                                print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # If JSON mode was not selected
                         else:
-                            print(structure_whitespace(cert[0], 3, " ", False) + " " + structure_whitespace(cert[1], 37, " ", True) + " " + structure_whitespace(cert[2], 11, " ", True) + " " + structure_whitespace(cert[3], 25, " ", True) + " " + structure_whitespace(cert[5].replace("_", " "), 25, " ", True) + " " + cert[7])
-                # Print error if no data was returned and exit with ec 1
+                            # Format header
+                            if verbosity == "-v":
+                                print(structure_whitespace("#", 3, "-", False) + " " + structure_whitespace("NAME", 37, "-", True) + " " + structure_whitespace("ISSUER", 11, "-", True) + " " + structure_whitespace("CN", 25, "-", True) + " " + structure_whitespace("VALID FROM", 25, "-", True) + " " + structure_whitespace("VALID UNTIL", 25, "-", True) + " " + structure_whitespace("SERIAL", 30, "-", True) + " " + "IN USE")
+                            else:
+                                print(structure_whitespace("#", 3, "-", False) + " " + structure_whitespace("NAME", 37, "-", True) + " " + structure_whitespace("ISSUER", 11, "-", True) + " " + structure_whitespace("CN", 25, "-", True) + " " + structure_whitespace("VALID UNTIL", 25, "-", True) + " " + "IN USE")
+                            # For each certificate found in the list, print the information
+                            for key,value in getCertData["certs"].items():
+                                id = structure_whitespace(str(key), 3, " ", False)    # Set our cert ID to the key value
+                                name = structure_whitespace(value["name"], 37, " ", False) + " "    # Set name to the name dict value
+                                isr = structure_whitespace(value["issuer"], 11, " ", True) + " "    # Set name to the issuer dict value
+                                cn = structure_whitespace(value["cn"], 25, " ", True) + " "    # Set name to the cn dict value
+                                start = structure_whitespace(value["start"], 25, " ", True) + " "    # Set name to the start date dict value
+                                exp = structure_whitespace(value["start"], 25, " ", True) + " "    # Set name to the expiration date dict value
+                                srl = structure_whitespace(value["serial"], 30, " ", True) + " "    # Set name to the start date dict value
+                                iu = structure_whitespace("ACTIVE", 6, " ", False) if value["active"] else ""    # Set the inuse keyword if the cert is in use
+                                # Check if verbose mode was selected
+                                if verbosity == "-v" or verbosity == "--verbose":
+                                    print(id + name + isr + cn + start + exp + srl + iu)
+                                # If no specific mode was specified assume the default
+                                else:
+                                    print(id + name + isr + cn + start + iu)
+                    # Print error if no data was returned and exit with ec 1
+                    else:
+                        print(get_exit_message("read_err", "", pfsenseAction, "", ""))
+                        sys.exit(1)
+                # If we did receive an error, print our error message and exit on that exit code
                 else:
-                    print(get_exit_message("read_err", "", pfsenseAction, "", ""))
-                    sys.exit(1)
+                    print(get_exit_message(getCertData["ec"], pfsenseServer, pfsenseAction, "", ""))
+                    sys.exit(getCertData["ec"])
+
             # Assign functions for flag --modify-alias
             elif pfsenseAction == "--set-wc-sslcert":
                 certName = thirdArg
