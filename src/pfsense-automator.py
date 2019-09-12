@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # ----------------------------------------------------------------------------------------------------------------
 # Author: Jared Hendrickson
-# Copyright 2019 - SecurityMetrics - Jared Hendrickson
+# Copyright 2019 - Jared Hendrickson
 # Purpose: This script is intended to add a CLI interface for pfSense devices. This uses cURL libraries to execute
 # pfSense's many PHP configuration scripts. All functions in this script mimic changes regularly made in a browser
 # and utilizes pfSense's built-in CSRF checks, input validation, and configuration parsing
