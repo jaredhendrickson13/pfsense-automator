@@ -29,6 +29,14 @@ Commands
         - `<description>` : Add a custom description to the DNS entry
         - `default` : Adds a default description that includes the users username and hostname 
 
+- `--read-dns` : Attempts to read current DNS Resolver (Unbound) entries
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-dns <argument>`
+    - **Arguments**:
+        - `--all` (`-a`) : Return all available DNS values including aliases
+        - `--default` (`-d`) : Return only base entries, no aliases are included
+        - `--host=<FQDN>` (beta) : Return only one entry given exact FQDN. If an alias matches the FQDN, the parent entry is printed             
+        - `--json=<directory_path>` : Exports SSL certificate data to a JSON file given an existing directory. This
+
 - `--add-sslcert` : Attempts to add a new external certificate to pfSense's Certificate Manager
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-sslcert <cert_file_path> <key_file_path> <cert_name>`
     - **Arguments**:
@@ -40,8 +48,10 @@ Commands
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-sslcerts <verbosity>`
     - **Arguments**:
         - `<verbosity>`
-            - `-v` : Includes all details about the certificates
+            - `--verbose` : Includes all details about the certificates
             - `default` : Includes base info
+            - `--json=<directory_path>` : Exports SSL certificate data to a JSON file
+                - `<directory_path>` : Specifies the directory to save the exported JSON file to
 
 - `--set-wc-sslcert` : Sets the SSL certificate that the WebConfigurator will use
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --set-wc-sslcert <cert_name>`
