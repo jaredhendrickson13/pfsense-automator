@@ -20,6 +20,14 @@ Syntax
 
 Commands
 ------------
+- `--read-vlans` : Attempts to read current configure VLANs
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-vlans <argument>`
+    - **Arguments**:
+        - `--all` (`-a`) : Return all available VLAN values 
+        - `--vlan=<vlan_id>` : Return only one entry given a valid VLAN ID
+        - `--iface=<iface_id>` (`-i`) : Return only VLANs configured on a specific interface 
+        - `--json=<directory_path>` : Exports VLAN data to a JSON file given an existing directory
+
 - `--add-dns` : Attempts to add a DNS entry to Unbound (DNS Resolver). This will not overwrite existing DNS entries
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-dns <subdomain> <primary_domain> <IP> <description>`
     - **Arguments**: 

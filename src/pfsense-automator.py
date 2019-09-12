@@ -60,6 +60,17 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_host" : "Error: Invalid hostname. Expected syntax: `pfsense-automator <HOSTNAME or IP> <COMMAND> <ARGS>`",
             "timeout" : "Error: connection timeout"
         },
+        # Error/success messages for --read-vlans flag
+        "--read-vlans" : {
+            2 : "Error: Unexpected error reading VLAN configuration. You may not have any VLANs configured",
+            3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            "invalid_filter" : "Error: Invalid filter `" + data1 + "`",
+            "export_err" : "Error: export directory `" + data1 + "` does not exist",
+            "export_success" : "Successfully exported VLAN data to " + data1,
+            "export_fail" : "Failed to export VLAN data as JSON"
+        },
         # Error/success messages for --add-dns flag
         "--add-dns" : {
             0 : "DNS record was added successfully",
@@ -361,6 +372,42 @@ def get_csrf_token(url, type):
         csrfParsed = "sid:" + csrfResponse['text'].split("sid:")[1].split(";")[0].replace(" ", "").replace("\n", "").replace("\"", "")
         csrfToken = csrfParsed if len(csrfParsed) is csrfTokenLength else ""    # Assign the csrfToken to the parsed value if the expected string length is found
         return csrfToken    # Return our token
+
+# get_vlan_ids() pulls existing VLAN configurations from Interfaces > Assignments > VLANs
+def get_vlan_ids(server, user, key):
+    # Local Variables
+    vlans = {"ec" : 2, "vlans" : {}}    # Predefine our dictionary that will track our VLAN data as well as errors
+    url = wcProtocol + "://" + server    # Assign our base URL
+    # Submit our intitial request and check for errors
+    vlans["ec"] = 10 if check_dns_rebind_error(url) else vlans["ec"]    # Return exit code 10 if dns rebind error found
+    vlans["ec"] = 6 if not validate_platform(url) else vlans["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if vlans["ec"] == 2:
+        vlans["ec"] = 3 if not check_auth(server, user, key) else vlans["ec"]    # Return exit code 3 if we could not sign in
+    # Check if we did not encountered any errors thus far, continue if not
+    if vlans["ec"] == 2:
+        getVlanData = http_request(url + "/interfaces_vlan.php", {}, {}, "GET")    # Pull our VLAN data using GET HTTP
+        vlanTableBody = getVlanData["text"].split("<tbody>")[1].split("</tbody>")[0]    # Find the data table body
+        vlanTableRows = vlanTableBody.replace("\t","").replace("\n","").replace("</tr>", "").split("<tr>")    # Find each of our table rows
+        # For each VLAN entry, parse the individual table data field
+        counter = 0    # Create a counter to track the current VLAN item's placement ID
+        for row in vlanTableRows:
+            vlanTableData = row.replace("</td>", "").split("<td>")    # Split our row values into list of data fields
+            # If the row has the minimum number of data fields, parse the data
+            if len(vlanTableData) >= 6:
+                vlans["vlans"][counter] = {}    # Predefine our current table data entry as a dictionary
+                vlans["vlans"][counter]["interface"] = vlanTableData[1].split(" ")[0]    # Save our interface ID to the dictionary
+                vlans["vlans"][counter]["vlan_id"] = vlanTableData[2]    # Save our VLAN ID to the dictionary
+                vlans["vlans"][counter]["priority"] = vlanTableData[3]    # Save our priority level to the dictionary
+                vlans["vlans"][counter]["descr"] = vlanTableData[4]    # Save our description to the dictionary
+                vlans["vlans"][counter]["id"] = vlanTableData[5].split("href=\"interfaces_vlan_edit.php?id=")[1].split("\" ></a>")[0]    # Save our configuration ID to the dictionary
+                counter = counter + 1    # Increase our counter by 1
+        # If our vlans dictionary was populated, return exit code 0
+        vlans["ec"] = 0 if len(vlans["vlans"]) > 0 else vlans["ec"]
+    # Return our dictionary
+    return vlans
+
+# add_vlan_id() creates a VLAN tagged interface provided a valid physical interface in Interfaces > Assignments > VLANs
 
 # add_auth_server_ldap() adds an LDAP server configuration to Advanced > User Mgr > Auth Servers
 def add_auth_server_ldap(server, user, key, descrName, ldapServer, ldapPort, transport, ldapProtocol, timeout, searchScope, baseDN, authContainers, extQuery, query, bindAnon, bindDN, bindPw, ldapTemplate, userAttr, groupAttr, memberAttr, rfc2307, groupObject, encode, userAlt):
@@ -1159,11 +1206,22 @@ def main():
                                 sys.exit(1)
                         # If JSON mode was not selected
                         else:
+                            # Format header values
+                            idHead = structure_whitespace("#", 3, "-", False) + " "    # Format our ID header value
+                            nameHead = structure_whitespace("NAME", 37, "-", True) + " "    # Format our name header value
+                            isrHead = structure_whitespace("ISSUER", 11, "-", True) + " "    # Format our issuer header value
+                            cnHead = structure_whitespace("CN", 25, "-", True) + " "    # Format our CN header value
+                            startHead = structure_whitespace("VALID FROM", 25, "-", True) + " "    # Format our start date header value
+                            expHead = structure_whitespace("VALID UNTIL", 25, "-", True) + " "    # Format our expiration date header value
+                            serialHead = structure_whitespace("SERIAL", 30, "-", True) + " "    # Format our serial header value
+                            iuHead = "IN USE"    # Format our certificate in use header value
                             # Format header
                             if verbosity == "-v":
-                                print(structure_whitespace("#", 3, "-", False) + " " + structure_whitespace("NAME", 37, "-", True) + " " + structure_whitespace("ISSUER", 11, "-", True) + " " + structure_whitespace("CN", 25, "-", True) + " " + structure_whitespace("VALID FROM", 25, "-", True) + " " + structure_whitespace("VALID UNTIL", 25, "-", True) + " " + structure_whitespace("SERIAL", 30, "-", True) + " " + "IN USE")
+                                print(idHead + nameHead + isrHead + cnHead + startHead + expHead + serialHead + iuHead)
+                                #print(structure_whitespace("#", 3, "-", False) + " " + structure_whitespace("NAME", 37, "-", True) + " " + structure_whitespace("ISSUER", 11, "-", True) + " " + structure_whitespace("CN", 25, "-", True) + " " + structure_whitespace("VALID FROM", 25, "-", True) + " " + structure_whitespace("VALID UNTIL", 25, "-", True) + " " + structure_whitespace("SERIAL", 30, "-", True) + " " + "IN USE")
                             else:
-                                print(structure_whitespace("#", 3, "-", False) + " " + structure_whitespace("NAME", 37, "-", True) + " " + structure_whitespace("ISSUER", 11, "-", True) + " " + structure_whitespace("CN", 25, "-", True) + " " + structure_whitespace("VALID UNTIL", 25, "-", True) + " " + "IN USE")
+                                print(idHead + nameHead + isrHead + cnHead + expHead + iuHead)
+                                #print(structure_whitespace("#", 3, "-", False) + " " + structure_whitespace("NAME", 37, "-", True) + " " + structure_whitespace("ISSUER", 11, "-", True) + " " + structure_whitespace("CN", 25, "-", True) + " " + structure_whitespace("VALID UNTIL", 25, "-", True) + " " + "IN USE")
                             # For each certificate found in the list, print the information
                             for key,value in getCertData["certs"].items():
                                 id = structure_whitespace(str(key), 3, " ", False)    # Set our cert ID to the key value
@@ -1199,6 +1257,75 @@ def main():
                 # If success code is returned, print success message
                 print(get_exit_message(setWcResponse, pfsenseServer, pfsenseAction, certName, ""))
                 sys.exit(setWcResponse)
+            # Assign functions for flag --read-vlans
+            elif pfsenseAction == "--read-vlans":
+                vlanFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                vlans = get_vlan_ids(pfsenseServer, user, key)
+                idHead = structure_whitespace("#", 4, "-", True) + " "    # Format our ID header value
+                interfaceHead = structure_whitespace("INTERFACE", 12, "-", True) + " "    # Format our interface header header value
+                vlanHead = structure_whitespace("VLAN ID", 10, "-", True) + " "    # Format our VLAN ID header value
+                priorityHead = structure_whitespace("PRIORITY", 10, "-", True) + " "    # Format our priority header value
+                descrHead = structure_whitespace("DESCRIPTION", 20, "-", True) + " "    # Format our description header value
+                header = idHead + interfaceHead + vlanHead + priorityHead + descrHead    # Format our print header
+                # Check that we did not receive an error pulling the data
+                if vlans["ec"] == 0:
+                    # Loop through each value in our dictionary
+                    counter = 0    # Assign a loop counter
+                    for key,value in vlans["vlans"].items():
+                        id = structure_whitespace(str(key), 4, " ", True) + " "    # Get our entry number
+                        interface = structure_whitespace(value["interface"], 12, " ", True)  + " "   # Get our interface ID
+                        vlanId = structure_whitespace(value["vlan_id"], 10, " ", True) + " "    # Get our VLAN ID
+                        priority = structure_whitespace(value["priority"], 10, " ", True) + " "    # Get our priority level
+                        descr = structure_whitespace(value["descr"], 20, " ", True) + " "   # Get our description
+                        # If we want to return all values
+                        if vlanFilter.upper() in ["-A", "--ALL"]:
+                            print(header) if counter == 0 else None  # Print our header if we are just starting loop
+                            print(id + interface + vlanId + priority + descr)    # Print our data values
+                        # If we only want to return value of one VLAN ID
+                        elif vlanFilter.startswith(("--vlan=","-v=")):
+                            vlanScope = vlanFilter.replace("--vlan=", "").replace("-v=", "")    # Remove expected argument values to determine our VLAN scope
+                            # Check if we have found our expected VLAN
+                            if vlanScope == value["vlan_id"]:
+                                print(header)    # Print our header
+                                print(id + interface + vlanId + priority + descr)    # Print our data values
+                                break    # Break the loop as we only need this matched value
+                        # If we only want to return value of one VLAN ID
+                        elif vlanFilter.startswith(("--iface=","-i=")):
+                            print(header) if counter == 0 else None  # Print our header if we are just starting loop
+                            interfaceScope = vlanFilter.replace("--iface=", "").replace("-i=", "")    # Remove expected argument values to determine our VLAN scope
+                            # Check if we have found our expected VLAN
+                            if interfaceScope == value["interface"]:
+                                print(id + interface + vlanId + priority + descr)    # Print our data values
+                        # If we want to export values as JSON
+                        elif vlanFilter.startswith(("--json=", "-j=")):
+                            jsonPath = vlanFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                            jsonName = "pf-readvlans-" + currentDate + ".json"    # Assign our default JSON name
+                            # Check if JSON path exists
+                            if os.path.exists(jsonPath):
+                                # Open an export file and save our data
+                                jsonExported = export_json(vlans["vlans"], jsonPath, jsonName)
+                                # Check if the file now exists
+                                if jsonExported:
+                                    print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                                    break    # Break the loop as we only need to perfrom this function once
+                                else:
+                                    print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                    sys.exit(1)
+                            # Print error if path does not exist
+                            else:
+                                print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # If we did not recognize the requested filter print our error message
+                        else:
+                            print(get_exit_message("invalid_filter", pfsenseServer, pfsenseAction, vlanFilter, ""))
+                            sys.exit(1)    # Exit on non-zero status
+                        counter = counter + 1  # Increase our counter
+                # If we received an error, print the error message and exit on non-zero ec
+                else:
+                    print(get_exit_message(vlans["ec"], pfsenseServer, pfsenseAction, "", ""))
+                    sys.exit(vlans["ec"])
             # If an unexpected action was given, return error
             else:
                 print(get_exit_message("invalid_arg", pfsenseServer, "generic", pfsenseAction, ""))
