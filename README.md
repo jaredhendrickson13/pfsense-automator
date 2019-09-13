@@ -20,6 +20,14 @@ Syntax
 
 Commands
 ------------
+- `--add-vlan` : Attempts to add a new VLAN tag to a specified interface
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-vlan <iface> <vlan_id> <priority> <descr>`
+    - **Arguments**:
+        - `<iface>` : Specify an existing physical interface to add the VLAN tag to (e.g. igb1, re0)
+        - `<vlan_id>` : Specify what VLAN ID to tag the interface as (1-4094)
+        - `<priority>` : Specify the VLAN priority value for QoS purposes (0-7)
+        - `<descr>` : Specify a description for the VLAN. Use `default` to add the username and local hostname of individual running the command
+
 - `--read-vlans` : Attempts to read current configure VLANs
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-vlans <argument>`
     - **Arguments**:

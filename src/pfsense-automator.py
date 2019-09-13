@@ -29,6 +29,7 @@ seventhArg = sys.argv[7] if len(sys.argv) > 7 else None    # Declare 'seventhArg
 eighthArg = sys.argv[8] if len(sys.argv) > 8 else None    # Declare 'eighthArg' to populate the third argument passed in to the script
 ninthArg = sys.argv[9] if len(sys.argv) > 9 else None    # Declare 'ninthArg' to populate the fourth argument passed in to the script
 tenthArg = sys.argv[10] if len(sys.argv) > 10 else None    # Declare 'tenthArg' to populate the fifth argument passed in to the script
+localUser = getpass.getuser()    # Save our current user's username to a string
 localHostname = socket.gethostname()    # Gets the hostname of the system running pfsense-controller
 currentDate = datetime.datetime.now().strftime("%Y%m%d%H%M%S")    # Get the current date in a file supported format
 cookieLocation = "/tmp/cookie-" + currentDate + ".pf"    # Set the default cookie location
@@ -59,6 +60,19 @@ def get_exit_message(ec, server, command, data1, data2):
             "connect_err" : "Error: Failed connection to " + server + ":" + str(wcProtocolPort),
             "invalid_host" : "Error: Invalid hostname. Expected syntax: `pfsense-automator <HOSTNAME or IP> <COMMAND> <ARGS>`",
             "timeout" : "Error: connection timeout"
+        },
+        # Error/success messages for --add-vlan flag
+        "--add-vlan" : {
+            0 : "Successfully added VLAN `" + data1 + "` on `" + data2 + "`",
+            1 : "Error: No usable interfaces were detected",
+            2 : "Error: Unexpected error adding VLAN `" + data1 + "` on `" + data2 + "`",
+            3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
+            7 : "Error: Interface `" + data2 + "` does not exist",
+            8 : "Error: VLAN `" + data1 + "` already exists on interface `" + data2 + "`",
+            10 : globalDnsRebindMsg,
+            "invalid_vlan" : "Error: VLAN `" + data1 + "` out of range. Expected 1-4094",
+            "invalid_priority" : "Error: VLAN priority `" + data1 + "` out of range. Expected 0-7"
         },
         # Error/success messages for --read-vlans flag
         "--read-vlans" : {
@@ -408,6 +422,57 @@ def get_vlan_ids(server, user, key):
     return vlans
 
 # add_vlan_id() creates a VLAN tagged interface provided a valid physical interface in Interfaces > Assignments > VLANs
+def add_vlan_id(server, user, key, iface, vlanId, priority, descr):
+    # Local Variables
+    vlanAdded = 2    # Assign our default return code. (2 means generic failure)
+    url = wcProtocol + "://" + server    # Assign our base URL
+    existingVlans = get_vlan_ids(server, user, key)    # Get our dictionary of configured VLANs
+    vlanPostData = {"__csrf_magic" : "", "if" : iface, "tag" : vlanId, "pcp" : priority, "descr" : descr, "save" : "Save"}    # Assign our POST data
+    # Check if we got our VLAN dictionary successfully
+    if existingVlans["ec"] == 0:
+        # Loop through existing VLAN to check that our requested VLAN ID isn't already configured
+        for key, value in existingVlans["vlans"].items():
+            if iface == value["interface"] and vlanId == value["vlan_id"]:
+                vlanAdded = 8  # Return exit code 8 (VLAN already exists
+                break  # Break the loop as we have found a match
+        # Check that we did not encounter an error
+        if vlanAdded == 2:
+            # Use GET HTTP to see what interfaces are available
+            getExistingIfaces = http_request(url + "/interfaces_vlan_edit.php", {}, {}, "GET")    # Get our HTTP response
+            ifaceSel = getExistingIfaces["text"].split("<select class=\"form-control\" name=\"if\" id=\"if\">")[1].split("</select>")[0]    # Pull iface select tag
+            ifaceOpt = ifaceSel.split("<option value=\"")    # Pull our raw options to a list
+            ifaceValues = []    # Predefine our final iface value list
+            # Check that we have at least one value
+            if len(ifaceOpt) > 0:
+                # Loop through each value and save it's iface value to our final list
+                for i in ifaceOpt:
+                        i = i.replace("\t","").replace("\n","").split("\">")[0]    # Pull the iface value from the value= parameter
+                        ifaceValues.append(i)    # Add our values to the list
+                # Check that we have our values
+                if len(ifaceValues) > 0:
+                    # Check that our requested iface is available
+                    if iface in ifaceValues:
+                        # Update our csrf token and submit our POST request
+                        vlanPostData["__csrf_magic"] = get_csrf_token(url + "/interfaces_vlan_edit.php", "GET")
+                        vlanPostReq = http_request(url + "/interfaces_vlan_edit.php", vlanPostData, {}, "POST")
+                        # Check that our new value is now configured
+                        vlanCheck = get_vlan_ids(server, user, key)
+                        # Loop through existing VLAN and check for our value
+                        if vlanCheck["ec"] == 0:
+                            for key, value in vlanCheck["vlans"].items():
+                                # Assign exit code 0 (success) if our value is now in the configuration. Otherwise retain error
+                                vlanAdded = 0 if iface == value["interface"] and vlanId == value["vlan_id"] else vlanAdded
+                    # If our request iface is not available
+                    else:
+                        vlanAdded = 7    # Assign exit code 7 (iface not available)
+                # If we did not have any usable interfaces
+                else:
+                    vlanAdded = 1    # Assign exit code 1 (no usable interfaces)
+    # If we failed to get our VLAN dictionary successfully, return the exit code of that function
+    else:
+        vlanAdded = existingVlans["ec"]    # Assign our get_vlan_ids() exit code to our return value
+    # Return our exit code
+    return vlanAdded
 
 # add_auth_server_ldap() adds an LDAP server configuration to Advanced > User Mgr > Auth Servers
 def add_auth_server_ldap(server, user, key, descrName, ldapServer, ldapPort, transport, ldapProtocol, timeout, searchScope, baseDN, authContainers, extQuery, query, bindAnon, bindDN, bindPw, ldapTemplate, userAttr, groupAttr, memberAttr, rfc2307, groupObject, encode, userAlt):
@@ -824,7 +889,8 @@ def modify_firewall_alias(server, user, key, aliasName, newValues):
         if aliasModded == 2:
             # Submit our post requests
             postPfAliasData = http_request(url + "/firewall_aliases_edit.php", aliasPostData, {}, "POST")
-            saveChanges = http_request(url + "/firewall_aliases.php", {"__csrf_magic" : get_csrf_token(wcProtocol + "://" + server + "/firewall_aliases.php", "GET"), "apply" : "Apply Changes"}, {}, "POST")
+            saveChangesPostData = {"__csrf_magic" : get_csrf_token(wcProtocol + "://" + server + "/firewall_aliases.php", "GET"), "apply" : "Apply Changes"}
+            saveChanges = http_request(url + "/firewall_aliases.php", saveChangesPostData, {}, "POST")
             aliasModded = 0    # Assign our success exit code
     # Return our integer exit code
     return aliasModded
@@ -1257,8 +1323,43 @@ def main():
                 # If success code is returned, print success message
                 print(get_exit_message(setWcResponse, pfsenseServer, pfsenseAction, certName, ""))
                 sys.exit(setWcResponse)
+            # Assign functions for flag --add-vlan
+            elif pfsenseAction == "--add-vlan":
+                # Action Varibles
+                interface = filter_input(thirdArg) if thirdArg is not None else input("Interface ID: ")    # Get our interface argument or prompt for input if missing
+                vlanId = filter_input(fourthArg) if fourthArg is not None else input("VLAN ID [1-4094]: ")    # Get our vlan tag argument or prompt for input if missing
+                priority = filter_input(fifthArg) if fifthArg is not None else input("VLAN priority [0-7]: ")    # Get our vlan priority argument or prompt for input if missing
+                descr = sixthArg if sixthArg is not None else input("Description [optional]: ")    # Get our vlan description argument or prompt for input if missing
+                user = eighthArg if seventhArg == "-u" and eighthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = tenthArg if ninthArg == "-p" and tenthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                descr = "Auto-added by " + user + " on " + localHostname if descr.upper() == "DEFAULT" else descr    # Assign a default description if requested
+                # Try to convert number strings to integers for conditional checks
+                try:
+                    vlanIdInt = int(vlanId)
+                except ValueError:
+                    vlanIdInt = 0    # On error, assign an integer value that is out of range (1-4094)
+                try:
+                    priorityInt = int(priority)
+                except ValueError:
+                    priorityInt = 0    # On error, assign an integer value that is out of range (0-7)
+                # Check our VLAN tag input
+                if 1 <= vlanIdInt <= 4094:
+                    # Check our VLAN priority input
+                    if 0 <= priorityInt <= 7:
+                        # Run our function to add VLAN
+                        addVlanEc = add_vlan_id(pfsenseServer, user, key, interface, vlanId, priority, descr)
+                        # Print our exit message
+                        print(get_exit_message(addVlanEc, pfsenseServer, pfsenseAction, vlanId, interface))
+                    # If our VLAN priority is out of range
+                    else:
+                        print(get_exit_message("invalid_priority", pfsenseServer, pfsenseAction, priority, ""))
+                # If our VLAN tag is out range
+                else:
+                    print(get_exit_message("invalid_vlan", pfsenseServer, pfsenseAction, vlanId, ""))
+                    sys.exit(1)    # Exit on non-zero
             # Assign functions for flag --read-vlans
             elif pfsenseAction == "--read-vlans":
+                # Action Variables
                 vlanFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
@@ -1267,7 +1368,7 @@ def main():
                 interfaceHead = structure_whitespace("INTERFACE", 12, "-", True) + " "    # Format our interface header header value
                 vlanHead = structure_whitespace("VLAN ID", 10, "-", True) + " "    # Format our VLAN ID header value
                 priorityHead = structure_whitespace("PRIORITY", 10, "-", True) + " "    # Format our priority header value
-                descrHead = structure_whitespace("DESCRIPTION", 20, "-", True) + " "    # Format our description header value
+                descrHead = structure_whitespace("DESCRIPTION", 30, "-", True) + " "    # Format our description header value
                 header = idHead + interfaceHead + vlanHead + priorityHead + descrHead    # Format our print header
                 # Check that we did not receive an error pulling the data
                 if vlans["ec"] == 0:
@@ -1278,7 +1379,7 @@ def main():
                         interface = structure_whitespace(value["interface"], 12, " ", True)  + " "   # Get our interface ID
                         vlanId = structure_whitespace(value["vlan_id"], 10, " ", True) + " "    # Get our VLAN ID
                         priority = structure_whitespace(value["priority"], 10, " ", True) + " "    # Get our priority level
-                        descr = structure_whitespace(value["descr"], 20, " ", True) + " "   # Get our description
+                        descr = structure_whitespace(value["descr"], 30, " ", True) + " "   # Get our description
                         # If we want to return all values
                         if vlanFilter.upper() in ["-A", "--ALL"]:
                             print(header) if counter == 0 else None  # Print our header if we are just starting loop
