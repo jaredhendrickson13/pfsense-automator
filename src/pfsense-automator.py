@@ -8,6 +8,7 @@
 # ----------------------------------------------------------------------------------------------------------------
 
 # IMPORT MODULES
+import platform
 import datetime
 import sys
 import os
@@ -19,6 +20,7 @@ import urllib3
 import json
 
 # Variables
+softwareVersion = "v0.0.3 " + platform.system() + "/" + platform.machine()    # Define our current version of this software
 firstArg = sys.argv[1] if len(sys.argv) > 1 else ""    # Declare 'firstArg' to populate the first argument passed in to the script
 secondArg = sys.argv[2] if len(sys.argv) > 2 else ""    # Declare 'secondArg' to populate the second argument passed in to the script
 thirdArg = sys.argv[3] if len(sys.argv) > 3 else None    # Declare 'thirdArg' to populate the third argument passed in to the script
@@ -59,7 +61,8 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_arg" : "Error: Invalid argument. Unknown action `" + data1 + "`",
             "connect_err" : "Error: Failed connection to " + server + ":" + str(wcProtocolPort),
             "invalid_host" : "Error: Invalid hostname. Expected syntax: `pfsense-automator <HOSTNAME or IP> <COMMAND> <ARGS>`",
-            "timeout" : "Error: connection timeout"
+            "timeout" : "Error: connection timeout",
+            "version" : "pfsense-automator " + softwareVersion
         },
         # Error/success messages for --add-vlan flag
         "--add-vlan" : {
@@ -974,6 +977,10 @@ def main():
     # Local Variables
     pfsenseServer = filter_input(firstArg)    # Assign the server value to the firstArg (filtered)
     pfsenseAction = filter_input(secondArg)    # Assign the action to execute (filtered)
+    # Check if we are simply requesting the software version
+    if firstArg.upper() in ("--VERSION", "-V"):
+        print(get_exit_message("version", "", "generic", "", ""))
+        sys.exit(0)
     # Check that user passed in an IP or hostname
     if pfsenseServer is not "":
         # Check if the pfSense server is available for connections
