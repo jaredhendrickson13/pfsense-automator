@@ -136,6 +136,17 @@ def get_exit_message(ec, server, command, data1, data2):
             "success" : "Authentication successful",
             "fail" : "Error: Authentication failed"
         },
+        # Error/success messages for --read-aliases
+        "--read-aliases" : {
+            3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "read_err" : "Error: failed to read Firewall Aliases from pfSense. You may not have any Firewall Aliases configured",
+            "export_err" : "Error: export directory `" + data1 + "` does not exist",
+            "export_success" : "Successfully exported Firewall Alias data to " + data1,
+            "export_fail" : "Failed to export Firewall Alias data as JSON"
+        },
         # Error/success messages for --modify-alias
         "--modify-alias" : {
             0 : "Alias `" + data1 +"` successfully updated",
@@ -814,6 +825,69 @@ def set_wc_certificate(server, user, key, certName):
     # Return our exit code
     return wccCheck
 
+# get_firewall_aliases() pulls aliases information from pfSense and saves it to a Python dictionary
+def get_firewall_aliases(server, user, key):
+    aliases = {"ec" : 2, "aliases" : {}}    # Pre-define our dictionary to track alias values and errors
+    url = wcProtocol + "://" + server    # Populate our base URL
+     # Check for errors and assign exit codes accordingly
+    aliases["ec"] = 10 if check_dns_rebind_error(url) else aliases["ec"]    # Return exit code 10 if dns rebind error found
+    aliases["ec"] = 6 if not validate_platform(url) else aliases["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if aliases["ec"] == 2:
+        aliases["ec"] = 3 if not check_auth(server, user, key) else aliases["ec"]    # Return exit code 3 if we could not sign in
+    # Check that authentication succeeded
+    if aliases["ec"] == 2:
+        # GET aliases IDs from /firewall_aliases.php
+        getAliasIds = http_request(url + "/firewall_aliases.php?tab=all", {}, {}, "GET")    # Save our GET HTTP response
+        aliasIdTableBody = getAliasIds["text"].split("<tbody>")[1].split("</tbody>")[0]    # Pull the table body data from HTML response
+        aliasIdTableRows = aliasIdTableBody.replace("\n", "").replace("\t", "").replace("</tr>", "").split("<tr>")    # Split our table body into list of rows
+        # Loop through our list and grab our data values
+        idList = []    # Pre-define our idList. This will be populated by our loop
+        for row in aliasIdTableRows:
+            # Check that the row contains an ID
+            if "id=" in row:
+                id = row.split("id=")[1].split("\';\">")[0]    # Pull the ID from the row
+                idList.append(id)    # Add our current ID to the list
+        # Loop through alias IDs and save values to our dictionary
+        for i in idList:
+            getAliasIdInfo = http_request(url + "/firewall_aliases_edit.php?id=" + i, {}, {}, "GET")    # Save our GET HTTP response
+            name = getAliasIdInfo["text"].split("<input class=\"form-control\" name=\"name\" id=\"name\" type=\"text\" value=\"")[1].split("\"")[0]    # Save our alias name
+            descr = getAliasIdInfo["text"].split("<input class=\"form-control\" name=\"descr\" id=\"descr\" type=\"text\" value=\"")[1].split("\"")[0]    # Save our alias description
+            type = ""    # Pre-define our type as empty string. This should be populated by our loop below
+            # Loop through our type <select> tag to see what type is currently selected
+            typeOpt = getAliasIdInfo["text"].split("<select class=\"form-control\" name=\"type\" id=\"type\">")[1].split("</select>")[0].split("<option ")    # Save our typeOptions as a list
+            for opt in typeOpt:
+                # Check if option is selected
+                if "selected" in opt:
+                    type = opt.split("value=\"")[1].split("\"")[0]    # Save our type value
+            # Save our dict values
+            aliases["aliases"][name] = {"name" : name, "type" : type, "descr" : descr, "entries" : {}}
+            # Loop through our alias entries and pull data
+            counter = 0    # Define a counter to keep track of loop cycle
+            while True:
+                # Check if there is an address value for our current index
+                if "id=\"address" + str(counter) in getAliasIdInfo["text"]:
+                    aliases["aliases"][name]["entries"][counter] = {} if counter not in aliases["aliases"][name]["entries"] else aliases["aliases"][name]["entries"][counter]    # Create our counter dictionary if not existing
+                    aliases["aliases"][name]["entries"][counter]["id"] = counter    # Save our counter value
+                    aliases["aliases"][name]["entries"][counter]["value"] = getAliasIdInfo["text"].split("id=\"address" + str(counter))[1].split("value=\"")[1].split("\"")[0]    # Save our entry value
+                    aliases["aliases"][name]["entries"][counter]["descr"] = getAliasIdInfo["text"].split("id=\"detail" + str(counter))[1].split("value=\"")[1].split("\"")[0]    # Save our entry value
+                    subnetOpt = getAliasIdInfo["text"].split("id=\"address_subnet" + str(counter))[1].split("</select>")[0].split("<option")    # Return our list of subnets
+                    # Loop through list of subnets to see if one is selected
+                    for opt in subnetOpt:
+                        if "selected" in opt:
+                            aliases["aliases"][name]["entries"][counter]["subnet"] = opt.split("value=\"")[1].split("\"")[0]    # Save our subnet value
+                            break    # Break our loop as there should only be one match
+                        else:
+                            aliases["aliases"][name]["entries"][counter]["subnet"] = "0"
+                    counter = counter + 1  # Increase our counter
+                # If there is not an address value for our current index, we know we have made it through all entries
+                else:
+                    break
+        # Assign our success code
+        aliases["ec"] = 0
+    # Return our dictionary
+    return aliases
+
 # get_firewall_alias_id() parses the HTML data to retrieve the pfAlias ID. Returns list [alias ID , exit code]
 def get_firewall_alias_id(server, user, key, aliasName):
     # Local Variables
@@ -1226,6 +1300,71 @@ def main():
                     else:
                         print(get_exit_message("fail", pfsenseServer, pfsenseAction, '', ''))
                         sys.exit(1)
+
+            # Assign functions for flag --read-aliases
+            elif pfsenseAction == "--read-aliases":
+                # Action Variables
+                aliasFilter = thirdArg    # Assign our filter argument to the third slot
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                getAliasData = get_firewall_aliases(pfsenseServer, user, key)    # Get our alias data dictionary
+                # Check that our exit code was good
+                if getAliasData["ec"] == 0:
+                    # If user wants to display all info, print in YAML like format
+                    if aliasFilter.upper() in ("-A", "--ALL"):
+                        # Print our alias values
+                        for key,value in getAliasData["aliases"].items():
+                            print("- name: " + value["name"])
+                            print("  description: \"" + value["descr"] + "\"")
+                            print("  type: " + value["type"])
+                            print("  entries:")
+                            # Loop through entries and print their values
+                            for entryKey,entryValue in value["entries"].items():
+                                print("    id: " + str(entryValue["id"]))
+                                print("      value: " + entryValue["value"])
+                                print("      subnet: " + entryValue["subnet"]) if entryValue["subnet"] != "0" else None
+                                print("      description: \"" + entryValue["descr"] + "\"")
+                            print("")
+                    # If user wants to display all info, print in YAML like format
+                    elif aliasFilter.startswith(("--name=","-n=")):
+                        aliasScope = aliasFilter.replace("--name=", "").replace("-n=", "")    # Remove expected argument values to determine our VLAN scope
+                        # Print our alias values
+                        if aliasScope in getAliasData["aliases"]:
+                            print("- name: " + getAliasData["aliases"][aliasScope]["name"])
+                            print("  description: \"" + getAliasData["aliases"][aliasScope]["descr"] + "\"")
+                            print("  type: " + getAliasData["aliases"][aliasScope]["type"])
+                            print("  entries:")
+                            # Loop through entries and print their values
+                            for entryKey,entryValue in getAliasData["aliases"][aliasScope]["entries"].items():
+                                print("    id: " + str(entryValue["id"]))
+                                print("      value: " + entryValue["value"])
+                                print("      subnet: " + entryValue["subnet"]) if entryValue["subnet"] != "0" else None
+                                print("      description: \"" + entryValue["descr"] + "\"")
+                    # Check if JSON mode was selected
+                    elif aliasFilter.startswith("-j=") or aliasFilter.startswith("--json="):
+                        jsonPath = aliasFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                        jsonName = "pf-readaliases-" + currentDate + ".json"    # Assign our default JSON name
+                        # Check if JSON path exists
+                        if os.path.exists(jsonPath):
+                            # Open an export file and save our data
+                            jsonExported = export_json(getAliasData["aliases"], jsonPath, jsonName)
+                            # Check if the file now exists
+                            if jsonExported:
+                                print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                            else:
+                                print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # Print error if path does not exist
+                        else:
+                            print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                            sys.exit(1)
+                    # If unknown filter was given
+                    else:
+                        print(get_exit_message("invalid_filter", pfsenseServer, pfsenseAction, aliasFilter, ""))
+                # If non-zero exit code was received from get_firewall_aliases()
+                else:
+                    print(get_exit_message(getAliasData["ec"], pfsenseServer, pfsenseAction, "", ""))
+                    sys.exit(getAliasData["ec"])
 
             # Assign functions for flag --modify-alias
             elif pfsenseAction == "--modify-alias":

@@ -28,7 +28,7 @@ Commands
         - `<priority>` : Specify the VLAN priority value for QoS purposes (0-7)
         - `<descr>` : Specify a description for the VLAN. Use `default` to add the username and local hostname of individual running the command
 
-- `--read-vlans` : Attempts to read current configure VLANs
+- `--read-vlans` : Attempts to read current configured VLANs
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-vlans <argument>`
     - **Arguments**:
         - `--all` (`-a`) : Return all available VLAN values 
@@ -72,6 +72,13 @@ Commands
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --set-wc-sslcert <cert_name>`
     - **Arguments**:
         - `<cert_name>` : Specify which certificate to use by it's certificate name. This much match exactly as it shows in the Certificate Manager. If multiple certificates match the same name, an error is thrown.
+
+- `--read-aliases` : Attempts to read current firewall aliases (only supports host, network and port aliases)
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-aliases <argument>`
+    - **Arguments**:
+        - `--all` (`-a`) : Return all available alias values in a YAML like format
+        - `--name=<alias_name>` (`-n`) : Return only one alias given a valid alias name
+        - `--json=<directory_path>` : Exports alias data to a JSON file given an existing directory
 
 - `--modify-alias` : Modifies an existing Firewall Alias. Existing entries will be overwritten. 
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --modify-alias <alias name> <IPs or hostnames>`
