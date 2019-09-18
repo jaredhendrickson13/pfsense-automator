@@ -54,6 +54,7 @@ def get_exit_message(ec, server, command, data1, data2):
     globalDnsRebindMsg = "Error: DNS rebind detected. Ensure `" + server + "` is listed in System > Advanced > Alt. Hostnames"
     globalAuthErrMsg = "Error: Authentication failed"
     globalPlatformErrMsg = "Error: `" + server + "` does not appear to be running pfSense"
+    globalPermissionErrMsg = "Error: Unable to execute function. Your user may lack necessary permissions"
     # Define our ERROR/SUCCESS message dictionary
     ecd = {
         # Generic error message that don't occur during commands
@@ -74,8 +75,21 @@ def get_exit_message(ec, server, command, data1, data2):
             7 : "Error: Interface `" + data2 + "` does not exist",
             8 : "Error: VLAN `" + data1 + "` already exists on interface `" + data2 + "`",
             10 : globalDnsRebindMsg,
+            15 : globalPermissionErrMsg,
             "invalid_vlan" : "Error: VLAN `" + data1 + "` out of range. Expected 1-4094",
             "invalid_priority" : "Error: VLAN priority `" + data1 + "` out of range. Expected 0-7"
+        },
+        # Error/success messages for --read-vlans flag
+        "--read-arp": {
+            2: "Error: Unexpected error reading ARP table",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err": "Error: export directory `" + data1 + "` does not exist",
+            "export_success": "Successfully exported ARP table to " + data1,
+            "export_fail": "Failed to export ARP table as JSON"
         },
         # Error/success messages for --read-vlans flag
         "--read-vlans" : {
@@ -83,6 +97,7 @@ def get_exit_message(ec, server, command, data1, data2):
             3 : globalAuthErrMsg,
             6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
             "invalid_filter" : "Error: Invalid filter `" + data1 + "`",
             "export_err" : "Error: export directory `" + data1 + "` does not exist",
             "export_success" : "Successfully exported VLAN data to " + data1,
@@ -97,6 +112,7 @@ def get_exit_message(ec, server, command, data1, data2):
             4 : "Error: DNS unreachable at " + server,
             6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
             "invalid_ip" : "Error: Invalid IP address",
             "invalid_syntax" : "Error: Invalid arguments. Expected syntax: `pfsense-controller <SERVER> --add-dns <HOST> <DOMAIN> <IP> <DESCR>`"
         },
@@ -107,6 +123,7 @@ def get_exit_message(ec, server, command, data1, data2):
             3 : globalAuthErrMsg,
             6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
             "invalid_syntax" : "Error: Invalid arguments. Expected syntax: `pfsense-controller <SERVER> --read-dns <FILTER>`",
             "invalid_filter": "Error: Invalid filter `" + data1 + "`",
             "export_err" : "Error: export directory `" + data1 + "` does not exist",
@@ -120,15 +137,18 @@ def get_exit_message(ec, server, command, data1, data2):
             3 : globalAuthErrMsg,
             6: globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
             "no_cert" : "Error: No certificate file found at `" + data1 + "`",
             "no_key" : "Error: No key file found at `" + data1 + "`",
             "empty" : "Error: Certificate or key file is empty"
         },
         # Error/success messages for --read-sslcerts flag
         "--read-sslcerts" : {
+            2 : "Error: Unexpected error reading SSL certificates",
             3 : globalAuthErrMsg,
             6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
             "read_err" : "Error: failed to read SSL certificates from pfSense. You may not have any certificates installed",
             "export_err" : "Error: export directory `" + data1 + "` does not exist",
             "export_success" : "Successfully exported SSL certificate data to " + data1,
@@ -144,6 +164,7 @@ def get_exit_message(ec, server, command, data1, data2):
             3 : globalAuthErrMsg,
             6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
             "invalid_filter": "Error: Invalid filter `" + data1 + "`",
             "read_err" : "Error: failed to read Firewall Aliases from pfSense. You may not have any Firewall Aliases configured",
             "export_err" : "Error: export directory `" + data1 + "` does not exist",
@@ -159,6 +180,7 @@ def get_exit_message(ec, server, command, data1, data2):
             4 : "Error: Unable to locate alias `" + data1 + "`",
             6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
             "invalid_syntax" : "Error: Invalid syntax - `pfsense-automator <pfSense IP or FQDN> --modify-alias <alias name> <alias values>`"
         },
         # Error/success messages for --set-wc-sslcert
@@ -171,6 +193,7 @@ def get_exit_message(ec, server, command, data1, data2):
             5 : "Error: Certificate `" + data1 + "` not found",
             6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
             "unknown_err" : "Error: An unknown error has occurred"
         },
         # Error/success messages for -add-ldapserver
@@ -180,6 +203,7 @@ def get_exit_message(ec, server, command, data1, data2):
             3 : globalAuthErrMsg,
             6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
             "invalid_userAlt" : "Error: Invalid username alteration value `" + data1 + "`. Expected yes or no",
             "invalid_encode" : "Error: Invalid encode value `" + data1 + "`. Expected yes or no",
             "invalid_rfc2307": "Error: Invalid RFC2307 value `" + data1 + "`. Expected yes or no",
@@ -228,7 +252,8 @@ def http_request(url, data, headers, method):
         # Populate our response dictionary with our response values
         resp_dict["text"] = req.text  # Save our HTML text data
         resp_dict["resp_code"] = req.status_code  # Save our response code
-        resp_dict["url"] = req.url    # Save our URL
+        resp_dict["req_url"] = url    # Save our requested URL
+        resp_dict["resp_url"] = req.url    # Save the URL returned in our response
         resp_dict["resp_headers"] = req.headers  # Save our response headers
         resp_dict["method"] = method.upper()    # Save our HTTP method
         resp_dict['encoding'] = req.encoding    # Save our encode type
@@ -368,6 +393,17 @@ def check_dns(server, user, key, host, domain):
     #Return boolean
     return recordExists
 
+# check_permissions() tasks an HTTP response and determines whether a permissions error was thrown
+def check_permissions(httpResp):
+    # Local Variables
+    permit = False    # Default our return value to false
+    noUserPage = "<a href=\"index.php?logout\">No page assigned to this user! Click here to logout.</a>"    # HTML error page when user does not have any permissions
+    # Check if our user receives responses indicating permissions failed
+    if noUserPage not in httpResp["text"] and httpResp["req_url"].split("?")[0] == httpResp["resp_url"].split("?")[0]:
+        permit = True    # Return a true value if our response looks normal
+    # Return our boolean
+    return permit
+
 # check_dns_rebind_error() checks if access to the webconfigurator is denied due to a DNS rebind error
 def check_dns_rebind_error(url):
     # Local Variables
@@ -388,7 +424,7 @@ def check_auth(server, user, key):
     authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define a dictionary for our login POST data
     # Complete authentication
     authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
-    authSuccess = True if not "Username or Password incorrect" in authCheck["text"] else authSuccess    # Return false if login failed
+    authSuccess = True if not "Username or Password incorrect" in authCheck["text"] and "class=\"fa fa-sign-out\"" in authCheck["text"] else authSuccess    # Return false if login failed
     return(authSuccess)
 
 # get_csrf_token() makes an initial connection to pfSense to retrieve the CSRF token. This supports both GET and POST requests
@@ -400,6 +436,49 @@ def get_csrf_token(url, type):
         csrfParsed = "sid:" + csrfResponse['text'].split("sid:")[1].split(";")[0].replace(" ", "").replace("\n", "").replace("\"", "")
         csrfToken = csrfParsed if len(csrfParsed) is csrfTokenLength else ""    # Assign the csrfToken to the parsed value if the expected string length is found
         return csrfToken    # Return our token
+
+# get_arp_table() pulls our pfSense's current ARP table
+def get_arp_table(server, user, key):
+    arpTable = {"ec" : 2, "arp" : {}}    # Pre-define our function dictionary
+    url = wcProtocol + "://" + server    # Assign our base URL
+    # Submit our intitial request and check for errors
+    arpTable["ec"] = 10 if check_dns_rebind_error(url) else arpTable["ec"]    # Return exit code 10 if dns rebind error found
+    arpTable["ec"] = 6 if not validate_platform(url) else arpTable["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if arpTable["ec"] == 2:
+        arpTable["ec"] = 3 if not check_auth(server, user, key) else arpTable["ec"]    # Return exit code 3 if we could not sign in
+    # Check if we encountered any errors before staring
+    if arpTable["ec"] == 2:
+        # Check that we had permissions for this page
+        getArpData = http_request(url + "/diag_arp.php", {}, {}, "GET")    # Pull our Interface data using GET HTTP
+        if check_permissions(getArpData):
+            arpTableBody = getArpData["text"].split("<tbody>")[1].split("</tbody>")[0]  # Find the data table body
+            arpTableRows = arpTableBody.replace("\t", "").replace("\n", "").replace("</tr>", "").split("<tr>")  # Find each of our table rows
+            # Loop through our rows to pick out our values
+            counter = 0    # Assign a loop counter
+            for row in arpTableRows:
+                # Check that the row is not empty
+                if row != "" and "<td>" in row:
+                    arpTableData = row.split("<td>")    # Split our table row into individual data fields
+                    arpTable["arp"][counter] = {}    # Assign a dictionary for each arp value
+                    arpTable["arp"][counter]["interface"] = arpTableData[1].replace("</td>", "")    # Assign our interface value to the dictionary
+                    arpTable["arp"][counter]["ip"] = arpTableData[2].replace("</td>", "")    # Assign our ip value to the dictionary
+                    arpTable["arp"][counter]["mac_addr"] = arpTableData[3].split("<small>")[0].replace("</td>", "")    # Assign our mac address value to the dictionary
+                    arpTable["arp"][counter]["mac_vendor"] = ""    # Default our mac_vendor value to empty string
+                    # Assign a mac vendor value if one exists
+                    if "<small>" in arpTableData[3]:
+                        arpTable["arp"][counter]["mac_vendor"] = arpTableData[3].split("<small>")[1].replace("</small>", "").replace("(", "").replace(")", "").replace("</td>", "")    # Assign our mac vendor value to the dictionary
+                    arpTable["arp"][counter]["hostname"] = arpTableData[4].replace("</td>", "")    # Assign our hostname value to the dictionary
+                    arpTable["arp"][counter]["expires"] = arpTableData[5].replace("</td>", "").replace("Expires in ", "")   # Assign our expiration value to the dictionary
+                    arpTable["arp"][counter]["type"] = arpTableData[6].replace("</td>", "")    # Assign our link type value to the dictionary
+                    counter = counter + 1    # Increase our counter
+            # Set our exit code to zero if our dictionary is populated
+            arpTable["ec"] = 0 if len(arpTable) > 0 else arpTable["ec"]
+        # If we did not have permission to the ARP table
+        else:
+            arpTable["ec"] = 15    # Assign exit code 15 if we did not have permission (permission denied)
+    # Return our dictionary
+    return arpTable
 
 # get_vlan_ids() pulls existing VLAN configurations from Interfaces > Assignments > VLANs
 def get_vlan_ids(server, user, key):
@@ -415,23 +494,28 @@ def get_vlan_ids(server, user, key):
     # Check if we did not encountered any errors thus far, continue if not
     if vlans["ec"] == 2:
         getVlanData = http_request(url + "/interfaces_vlan.php", {}, {}, "GET")    # Pull our VLAN data using GET HTTP
-        vlanTableBody = getVlanData["text"].split("<tbody>")[1].split("</tbody>")[0]    # Find the data table body
-        vlanTableRows = vlanTableBody.replace("\t","").replace("\n","").replace("</tr>", "").split("<tr>")    # Find each of our table rows
-        # For each VLAN entry, parse the individual table data field
-        counter = 0    # Create a counter to track the current VLAN item's placement ID
-        for row in vlanTableRows:
-            vlanTableData = row.replace("</td>", "").split("<td>")    # Split our row values into list of data fields
-            # If the row has the minimum number of data fields, parse the data
-            if len(vlanTableData) >= 6:
-                vlans["vlans"][counter] = {}    # Predefine our current table data entry as a dictionary
-                vlans["vlans"][counter]["interface"] = vlanTableData[1].split(" ")[0]    # Save our interface ID to the dictionary
-                vlans["vlans"][counter]["vlan_id"] = vlanTableData[2]    # Save our VLAN ID to the dictionary
-                vlans["vlans"][counter]["priority"] = vlanTableData[3]    # Save our priority level to the dictionary
-                vlans["vlans"][counter]["descr"] = vlanTableData[4]    # Save our description to the dictionary
-                vlans["vlans"][counter]["id"] = vlanTableData[5].split("href=\"interfaces_vlan_edit.php?id=")[1].split("\" ></a>")[0]    # Save our configuration ID to the dictionary
-                counter = counter + 1    # Increase our counter by 1
-        # If our vlans dictionary was populated, return exit code 0
-        vlans["ec"] = 0 if len(vlans["vlans"]) > 0 else vlans["ec"]
+        # Check that we had permissions for this page
+        if check_permissions(getVlanData):
+            vlanTableBody = getVlanData["text"].split("<tbody>")[1].split("</tbody>")[0]    # Find the data table body
+            vlanTableRows = vlanTableBody.replace("\t","").replace("\n","").replace("</tr>", "").split("<tr>")    # Find each of our table rows
+            # For each VLAN entry, parse the individual table data field
+            counter = 0    # Create a counter to track the current VLAN item's placement ID
+            for row in vlanTableRows:
+                vlanTableData = row.replace("</td>", "").split("<td>")    # Split our row values into list of data fields
+                # If the row has the minimum number of data fields, parse the data
+                if len(vlanTableData) >= 6:
+                    vlans["vlans"][counter] = {}    # Predefine our current table data entry as a dictionary
+                    vlans["vlans"][counter]["interface"] = vlanTableData[1].split(" ")[0]    # Save our interface ID to the dictionary
+                    vlans["vlans"][counter]["vlan_id"] = vlanTableData[2]    # Save our VLAN ID to the dictionary
+                    vlans["vlans"][counter]["priority"] = vlanTableData[3]    # Save our priority level to the dictionary
+                    vlans["vlans"][counter]["descr"] = vlanTableData[4]    # Save our description to the dictionary
+                    vlans["vlans"][counter]["id"] = vlanTableData[5].split("href=\"interfaces_vlan_edit.php?id=")[1].split("\" ></a>")[0]    # Save our configuration ID to the dictionary
+                    counter = counter + 1    # Increase our counter by 1
+            # If our vlans dictionary was populated, return exit code 0
+            vlans["ec"] = 0 if len(vlans["vlans"]) > 0 else vlans["ec"]
+        # If we did not have the correct permissions return error code 15
+        else:
+            vlans["ec"] = 15    # Return error code 15 (permission denied)
     # Return our dictionary
     return vlans
 
@@ -453,35 +537,40 @@ def add_vlan_id(server, user, key, iface, vlanId, priority, descr):
         if vlanAdded == 2:
             # Use GET HTTP to see what interfaces are available
             getExistingIfaces = http_request(url + "/interfaces_vlan_edit.php", {}, {}, "GET")    # Get our HTTP response
-            ifaceSel = getExistingIfaces["text"].split("<select class=\"form-control\" name=\"if\" id=\"if\">")[1].split("</select>")[0]    # Pull iface select tag
-            ifaceOpt = ifaceSel.split("<option value=\"")    # Pull our raw options to a list
-            ifaceValues = []    # Predefine our final iface value list
-            # Check that we have at least one value
-            if len(ifaceOpt) > 0:
-                # Loop through each value and save it's iface value to our final list
-                for i in ifaceOpt:
-                        i = i.replace("\t","").replace("\n","").split("\">")[0]    # Pull the iface value from the value= parameter
-                        ifaceValues.append(i)    # Add our values to the list
-                # Check that we have our values
-                if len(ifaceValues) > 0:
-                    # Check that our requested iface is available
-                    if iface in ifaceValues:
-                        # Update our csrf token and submit our POST request
-                        vlanPostData["__csrf_magic"] = get_csrf_token(url + "/interfaces_vlan_edit.php", "GET")
-                        vlanPostReq = http_request(url + "/interfaces_vlan_edit.php", vlanPostData, {}, "POST")
-                        # Check that our new value is now configured
-                        vlanCheck = get_vlan_ids(server, user, key)
-                        # Loop through existing VLAN and check for our value
-                        if vlanCheck["ec"] == 0:
-                            for key, value in vlanCheck["vlans"].items():
-                                # Assign exit code 0 (success) if our value is now in the configuration. Otherwise retain error
-                                vlanAdded = 0 if iface == value["interface"] and vlanId == value["vlan_id"] else vlanAdded
-                    # If our request iface is not available
+            # Check that we had permissions for this page
+            if check_permissions(getExistingIfaces):
+                ifaceSel = getExistingIfaces["text"].split("<select class=\"form-control\" name=\"if\" id=\"if\">")[1].split("</select>")[0]    # Pull iface select tag
+                ifaceOpt = ifaceSel.split("<option value=\"")    # Pull our raw options to a list
+                ifaceValues = []    # Predefine our final iface value list
+                # Check that we have at least one value
+                if len(ifaceOpt) > 0:
+                    # Loop through each value and save it's iface value to our final list
+                    for i in ifaceOpt:
+                            i = i.replace("\t","").replace("\n","").split("\">")[0]    # Pull the iface value from the value= parameter
+                            ifaceValues.append(i)    # Add our values to the list
+                    # Check that we have our values
+                    if len(ifaceValues) > 0:
+                        # Check that our requested iface is available
+                        if iface in ifaceValues:
+                            # Update our csrf token and submit our POST request
+                            vlanPostData["__csrf_magic"] = get_csrf_token(url + "/interfaces_vlan_edit.php", "GET")
+                            vlanPostReq = http_request(url + "/interfaces_vlan_edit.php", vlanPostData, {}, "POST")
+                            # Check that our new value is now configured
+                            vlanCheck = get_vlan_ids(server, user, key)
+                            # Loop through existing VLAN and check for our value
+                            if vlanCheck["ec"] == 0:
+                                for key, value in vlanCheck["vlans"].items():
+                                    # Assign exit code 0 (success) if our value is now in the configuration. Otherwise retain error
+                                    vlanAdded = 0 if iface == value["interface"] and vlanId == value["vlan_id"] else vlanAdded
+                        # If our request iface is not available
+                        else:
+                            vlanAdded = 7    # Assign exit code 7 (iface not available)
+                    # If we did not have any usable interfaces
                     else:
-                        vlanAdded = 7    # Assign exit code 7 (iface not available)
-                # If we did not have any usable interfaces
-                else:
-                    vlanAdded = 1    # Assign exit code 1 (no usable interfaces)
+                        vlanAdded = 1    # Assign exit code 1 (no usable interfaces)
+            # If we did not have permissions to the page
+            else:
+                vlanAdded = 15    # Assign exit code 15 (permission denied)
     # If we failed to get our VLAN dictionary successfully, return the exit code of that function
     else:
         vlanAdded = existingVlans["ec"]    # Assign our get_vlan_ids() exit code to our return value
@@ -533,10 +622,16 @@ def add_auth_server_ldap(server, user, key, descrName, ldapServer, ldapPort, tra
         ldapAdded = 3 if not check_auth(server, user, key) else ldapAdded    # Return exit code 3 if we could not sign in
     # Check that no errors have occurred so far (should be at 2)
     if ldapAdded == 2:
-        # Update our CSRF token and submit our POST request
-        addAuthServerData["__csrf_magic"] = get_csrf_token(url + "/system_authservers.php?act=new", "GET")
-        addAuthServer = http_request(url + "/system_authservers.php?act=new", addAuthServerData, {}, "POST")
-        ldapAdded = 0
+        # Check that we have permission to these pages before proceeding
+        addAuthPermissions = http_request(url + "/system_authservers.php?act=new", {}, {}, "GET")
+        if check_permissions(addAuthPermissions):
+            # Update our CSRF token and submit our POST request
+            addAuthServerData["__csrf_magic"] = get_csrf_token(url + "/system_authservers.php?act=new", "GET")
+            addAuthServer = http_request(url + "/system_authservers.php?act=new", addAuthServerData, {}, "POST")
+            ldapAdded = 0
+        # If we did not have permissions to the page
+        else:
+            ldapAdded = 15    # Return exit code 15 (permission denied)
     # Return our exit code
     return ldapAdded
 
@@ -552,45 +647,50 @@ def get_dns_entries(server, user, key):
         dnsDict["ec"] = 3 if not check_auth(server, user, key) else dnsDict["ec"]    # Return exit code 3 if we could not sign in
     # Check that login was successful
     if dnsDict["ec"] == 2:
-        # Pull our DNS entries
+        # Check that we have access to these pages before proceeding
         getDnsResp = http_request(url + "/services_unbound.php", {}, {}, "GET")
-        dnsBody = getDnsResp["text"].split("<tbody>")[1].split("</tbody>")[0]
-        dnsRows = dnsBody.split("<tr>")
-        # Cycle through our DNS rows to pull out individual values
-        for r in dnsRows:
-            rInvalid = False    # Tracks if a valid record was identified
-            # Try to parse our values into a dictionary
-            try:
-                host = r.split("<td>")[1].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
-                domain = r.split("<td>")[2].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
-                ip = r.split("<td>")[3].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
-                descr = r.split("<td>")[4].replace("\t", "").replace("</td>", "").replace("\n", "").replace("<i class=\"fa fa-angle-double-right text-info\"></i>", "")
-                id = r.split("<td>")[5].split("?id=")[1].split("\">")[0].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
-            except IndexError:
-                rInvalid = True
-            # Check if entry is an alias
-            if not rInvalid:
-                # Check if IP contains the word ALIASFOR
-                if "Aliasfor" in ip:
-                    aliasFqdn = ip.split("Aliasfor")[1]    # Assign our alias FQDN
-                    aliasHost = None   # Declare a variable for our aliases parent hostname
-                    aliasDomain = None # Declare a variable for our aliases parent domain name
-                    # Loop through our domains and check if the Fqdn matches a domain
-                    for key,value in dnsDict["domains"].items():
-                        # Check what domain the alias is tied to
-                        if aliasFqdn.endswith(key):
-                            aliasDomain = key
-                            aliasHost = aliasFqdn.replace("." + aliasDomain, "")
-                            break
-                    # If we found our aliases parent domain and host
-                    if aliasHost is not None and aliasDomain is not None:
-                        dnsDict["domains"][aliasDomain][aliasHost]["alias"][host] = {"hostname" : host, "domain" : domain, "descr" : descr}
-                # Otherwise add our item normally
-                else:
-                    dnsDict["domains"][domain] = {} if not domain in dnsDict["domains"] else dnsDict["domains"][domain]
-                    dnsDict["domains"][domain][host] = {"hostname" : host, "domain" : domain, "ip" : ip, "descr" : descr, "id" : id, "alias" : {}}
-                # Set our exit code to 0
-                dnsDict["ec"] = 0
+        if check_permissions(getDnsResp):  # Check that we had permissions for this page
+            # Pull our DNS entries
+            dnsBody = getDnsResp["text"].split("<tbody>")[1].split("</tbody>")[0]
+            dnsRows = dnsBody.split("<tr>")
+            # Cycle through our DNS rows to pull out individual values
+            for r in dnsRows:
+                rInvalid = False    # Tracks if a valid record was identified
+                # Try to parse our values into a dictionary
+                try:
+                    host = r.split("<td>")[1].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
+                    domain = r.split("<td>")[2].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
+                    ip = r.split("<td>")[3].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
+                    descr = r.split("<td>")[4].replace("\t", "").replace("</td>", "").replace("\n", "").replace("<i class=\"fa fa-angle-double-right text-info\"></i>", "")
+                    id = r.split("<td>")[5].split("?id=")[1].split("\">")[0].replace("\t", "").replace("</td>", "").replace("\n", "").replace(" ", "")
+                except IndexError:
+                    rInvalid = True
+                # Check if entry is an alias
+                if not rInvalid:
+                    # Check if IP contains the word ALIASFOR
+                    if "Aliasfor" in ip:
+                        aliasFqdn = ip.split("Aliasfor")[1]    # Assign our alias FQDN
+                        aliasHost = None   # Declare a variable for our aliases parent hostname
+                        aliasDomain = None # Declare a variable for our aliases parent domain name
+                        # Loop through our domains and check if the Fqdn matches a domain
+                        for key,value in dnsDict["domains"].items():
+                            # Check what domain the alias is tied to
+                            if aliasFqdn.endswith(key):
+                                aliasDomain = key
+                                aliasHost = aliasFqdn.replace("." + aliasDomain, "")
+                                break
+                        # If we found our aliases parent domain and host
+                        if aliasHost is not None and aliasDomain is not None:
+                            dnsDict["domains"][aliasDomain][aliasHost]["alias"][host] = {"hostname" : host, "domain" : domain, "descr" : descr}
+                    # Otherwise add our item normally
+                    else:
+                        dnsDict["domains"][domain] = {} if not domain in dnsDict["domains"] else dnsDict["domains"][domain]
+                        dnsDict["domains"][domain][host] = {"hostname" : host, "domain" : domain, "ip" : ip, "descr" : descr, "id" : id, "alias" : {}}
+                    # Set our exit code to 0
+                    dnsDict["ec"] = 0
+        # If we did not have permissions to the page
+        else:
+            dnsDict["ec"] = 15    # Return exit code 15 (permission denied)
     # Return our dictionary
     return dnsDict
 
@@ -611,15 +711,23 @@ def add_dns_entry(server, user, key, host, domain, ip, descr):
             recordAdded = 3 if not check_auth(server, user, key) else recordAdded    # Return exit code 3 if we could not sign in
         # Check that no errors have occurred so far (should be at 2)
         if recordAdded == 2:
-            # Update our CSRF token and add our DNS entry
-            dnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound_host_edit.php", "GET")
-            dnsCheck = http_request(url + "/services_unbound_host_edit.php", dnsData, {}, "POST")
-            # Update our CSRF token and save changes
-            saveDnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound.php", "GET")
-            saveCheck = http_request(url + "/services_unbound.php", saveDnsData, {}, "POST")
-            # Check if a record is now present
-            if check_dns(server, user, key, host, domain):
-                recordAdded = 0    # Set return variable 0 (0 means successfully added)
+            # Check we have permissions to the pages
+            dnsReadPermissions = http_request(url + "/services_unbound.php", {}, {}, "GET")
+            dnsAddPermissions = http_request(url + "/services_unbound_host_edit.php", {}, {}, "GET")
+            if check_permissions(dnsAddPermissions) and check_permissions(dnsReadPermissions):
+                # Update our CSRF token and add our DNS entry
+                dnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound_host_edit.php", "GET")
+                dnsCheck = http_request(url + "/services_unbound_host_edit.php", dnsData, {}, "POST")
+                # Update our CSRF token and save changes
+                saveDnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound.php", "GET")
+                saveCheck = http_request(url + "/services_unbound.php", saveDnsData, {}, "POST")
+                # Check if a record is now present
+                if check_dns(server, user, key, host, domain):
+                    recordAdded = 0    # Set return variable 0 (0 means successfully added)
+            # If we did not have permissions to the page
+            else:
+                recordAdded = 15    # Return exit code 15 (permission denied)
+    # If a DNS record already exists
     else:
         recordAdded = 1    # Set return value to 1 (1 means record already existed when function started)
     # Return exit code
@@ -637,9 +745,10 @@ def get_ssl_certs(server, user, key):
     if certManagerDict["ec"] == 2:
         certManagerDict["ec"] = 3 if not check_auth(server, user, key) else certManagerDict["ec"]    # Return exit code 3 if we could not sign in
     if certManagerDict["ec"] == 2:
-        # Save the GET data for /system_certmanager.php
+        # Check that we had permissions for this page
         getCertData = http_request(url + "/system_certmanager.php", {}, {}, "GET")
-        if not check_dns_rebind_error(url):
+        if check_permissions(getCertData):
+            # Parse our output
             certRowList = getCertData['text'].split("<tbody>")[1].split("</tbody>")[0].split("<tr>")
             # Cycle through each table row containing certificate info and parse accordingly
             # End format will be a multi-dimensional list. Example: list[[index, name, issuer, cn, start, end, serial]]
@@ -683,6 +792,9 @@ def get_ssl_certs(server, user, key):
                     certIndex = certIndex + 1
             # Assign exit code 0 if we have our dictionary populated
             certManagerDict["ec"] = 0 if len(certManagerDict["certs"]) > 0 else certManagerDict["ec"]
+        # If we did not have permissions
+        else:
+            certManagerDict["ec"] = 15    # Return exit code 15 (permissions denied)
     # Return our data dict
     return certManagerDict
 
@@ -738,16 +850,22 @@ def add_ssl_cert(server, user, key, cert, certkey, descr):
         certAdded = 3 if not check_auth(server, user, key) else certAdded    # Return exit code 3 if we could not sign in
     # Only proceed if an error has not occurred
     if certAdded == 2:
-        # Add SSL cert and check for the added cert afterwards
-        addCertData["__csrf_magic"] = get_csrf_token(url + "/system_certmanager.php?act=new", "GET")
-        postCheck = http_request(url + "/system_certmanager.php?act=new", addCertData, {}, "POST")
-        postCertDict = get_ssl_certs(server, user, key)  # Get the current dict of certificate installed on pfSense
-        postCertDictLen = len(postCertDict["certs"])  # Track the length of existing certificates in the dict
-        # Check if the dict increased in size by one when we added a new certificate
-        if postCertDictLen == preCertDictLen + 1:
-            # Check if our descr matches the new certificates name
-            if descr == postCertDict["certs"][postCertDictLen - 1]["name"]:
-                certAdded = 0    # We now know the certificate that was added was the certificate intended
+        # Check our permissions
+        permissionCheck = http_request(url + "/system_certmanager.php?act=new", {}, {}, "GET")
+        if check_permissions(permissionCheck):
+            # Add SSL cert and check for the added cert afterwards
+            addCertData["__csrf_magic"] = get_csrf_token(url + "/system_certmanager.php?act=new", "GET")
+            postCheck = http_request(url + "/system_certmanager.php?act=new", addCertData, {}, "POST")
+            postCertDict = get_ssl_certs(server, user, key)  # Get the current dict of certificate installed on pfSense
+            postCertDictLen = len(postCertDict["certs"])  # Track the length of existing certificates in the dict
+            # Check if the dict increased in size by one when we added a new certificate
+            if postCertDictLen == preCertDictLen + 1:
+                # Check if our descr matches the new certificates name
+                if descr == postCertDict["certs"][postCertDictLen - 1]["name"]:
+                    certAdded = 0    # We now know the certificate that was added was the certificate intended
+        # If we did not have permissions
+        else:
+            certAdded = 15    # Return exit code 15 (permission denied)
     # Return exit code
     return certAdded
 
@@ -768,63 +886,68 @@ def set_wc_certificate(server, user, key, certName):
         wccCheck = 3 if not check_auth(server, user, key) else wccCheck    # Return exit code 3 if we could not sign in
     # Check that authentication was successful
     if wccCheck == 2:
-        # Make GET request to /system_advanced_admin.php to check response, split the response and target the SSL cert selection HTML field
+        # Check that we have permissions to this page first
         getSysAdvAdm = http_request(url + "/system_advanced_admin.php", {}, {}, "GET")
-        getSysAdvAdmList = getSysAdvAdm["text"].split("<select class=\"form-control\" name=\"ssl-certref\" id=\"ssl-certref\">")[1].split("</select>")[0].split("<option value=")
-        # For each option in the selection box, check that the value is expected and parse the data
-        for wcc in getSysAdvAdmList:
-            # Remove trailing characters from wcc
-            wcc = wcc.replace("\n", "").replace("\t", "")
-            # Ensure the option is not blank and that option is found in the field
-            if wcc != "" and "</option>" in wcc:
-                # Try to split and parse the data to find the expected values
-                try:
-                    certRef = wcc.split(">")[0].replace("\"", "")    # Parse the option and save the certificate reference number
-                    certId = wcc.split(">")[1].split("</option")[0]    # Parse the option and save the certificate ID
-                except IndexError as x:
-                    pass
-                # Check if certRef is currently selected, save this value
-                if "selected" in certRef:
-                    certRef = certRef.replace(" selected", "")    # Remove the selected string
-                    selectedWcc = certRef    # Assign certRef to selectedWcc
-                # Check if our certID matches our certName passed into the function
-                if certId == certName:
-                    # Check if a certificate was already matched, return error 5 if so
-                    if wccFound:
-                        wccCheck = 4    # Assign exit code 4 to wccCheck (means multiple certs were found)
-                        wccFound = False    # Revert back to false, multiple matches means we can't determine which one the user actually wants
-                        break    # Break the loop as we have multiple certs matching the same name
-                    wccFound = True
-                    newWcc = certRef    # Assign our new webconfigurator certificate ID to a permanent variable
-        # Check if we found a legitimate match and no error occurred
-        if wccFound:
-            # Check if our certRef values are different (meaning we are actually changing the certificate)
-            if newWcc != selectedWcc:
-                # Update our CSRF, certref, and take our POST request and save a new GET request that should show our new configuration
-                wccData["__csrf_magic"] = get_csrf_token(url + "/system_advanced_admin.php", "GET")
-                wccData["ssl-certref"] = newWcc
-                postSysAdvAdm = http_request(url + "/system_advanced_admin.php", wccData, {}, "POST")
-                checkSysAdvAdm = http_request(url + "/system_advanced_admin.php", {}, {}, "GET")["text"]
-                checkSysAdvAdm = checkSysAdvAdm.split("<select class=\"form-control\" name=\"ssl-certref\" id=\"ssl-certref\">")[1].split("</select>")[0].split("<option value=")
-                # Parse the new GET response to a list of HTML selection options
-                for wcc in checkSysAdvAdm:
+        if check_permissions(getSysAdvAdm):
+            # Make GET request to /system_advanced_admin.php to check response, split the response and target the SSL cert selection HTML field
+            getSysAdvAdmList = getSysAdvAdm["text"].split("<select class=\"form-control\" name=\"ssl-certref\" id=\"ssl-certref\">")[1].split("</select>")[0].split("<option value=")
+            # For each option in the selection box, check that the value is expected and parse the data
+            for wcc in getSysAdvAdmList:
+                # Remove trailing characters from wcc
+                wcc = wcc.replace("\n", "").replace("\t", "")
+                # Ensure the option is not blank and that option is found in the field
+                if wcc != "" and "</option>" in wcc:
                     # Try to split and parse the data to find the expected values
                     try:
                         certRef = wcc.split(">")[0].replace("\"", "")    # Parse the option and save the certificate reference number
-                    # Add tolerance for IndexErrors, if we could not parse it, it is invalid data
+                        certId = wcc.split(">")[1].split("</option")[0]    # Parse the option and save the certificate ID
                     except IndexError as x:
                         pass
                     # Check if certRef is currently selected, save this value
                     if "selected" in certRef:
                         certRef = certRef.replace(" selected", "")    # Remove the selected string
-                        newSelectedWcc = certRef    # Assign certRef to selectedWcc
-                        if newSelectedWcc == newWcc:
-                            wccCheck = 0
-            else:
-                wccCheck = 1    # Assign exit code 1 (means specified certificate is already being used)
-        # If we couldn't find the cert, and we didn't find multiple, return exit code 5
-        elif not wccFound and wccCheck != 4:
-            wccCheck = 5    # Returne exit code 5, certificate not found
+                        selectedWcc = certRef    # Assign certRef to selectedWcc
+                    # Check if our certID matches our certName passed into the function
+                    if certId == certName:
+                        # Check if a certificate was already matched, return error 5 if so
+                        if wccFound:
+                            wccCheck = 4    # Assign exit code 4 to wccCheck (means multiple certs were found)
+                            wccFound = False    # Revert back to false, multiple matches means we can't determine which one the user actually wants
+                            break    # Break the loop as we have multiple certs matching the same name
+                        wccFound = True
+                        newWcc = certRef    # Assign our new webconfigurator certificate ID to a permanent variable
+            # Check if we found a legitimate match and no error occurred
+            if wccFound:
+                # Check if our certRef values are different (meaning we are actually changing the certificate)
+                if newWcc != selectedWcc:
+                    # Update our CSRF, certref, and take our POST request and save a new GET request that should show our new configuration
+                    wccData["__csrf_magic"] = get_csrf_token(url + "/system_advanced_admin.php", "GET")
+                    wccData["ssl-certref"] = newWcc
+                    postSysAdvAdm = http_request(url + "/system_advanced_admin.php", wccData, {}, "POST")
+                    checkSysAdvAdm = http_request(url + "/system_advanced_admin.php", {}, {}, "GET")["text"]
+                    checkSysAdvAdm = checkSysAdvAdm.split("<select class=\"form-control\" name=\"ssl-certref\" id=\"ssl-certref\">")[1].split("</select>")[0].split("<option value=")
+                    # Parse the new GET response to a list of HTML selection options
+                    for wcc in checkSysAdvAdm:
+                        # Try to split and parse the data to find the expected values
+                        try:
+                            certRef = wcc.split(">")[0].replace("\"", "")    # Parse the option and save the certificate reference number
+                        # Add tolerance for IndexErrors, if we could not parse it, it is invalid data
+                        except IndexError as x:
+                            pass
+                        # Check if certRef is currently selected, save this value
+                        if "selected" in certRef:
+                            certRef = certRef.replace(" selected", "")    # Remove the selected string
+                            newSelectedWcc = certRef    # Assign certRef to selectedWcc
+                            if newSelectedWcc == newWcc:
+                                wccCheck = 0
+                else:
+                    wccCheck = 1    # Assign exit code 1 (means specified certificate is already being used)
+            # If we couldn't find the cert, and we didn't find multiple, return exit code 5
+            elif not wccFound and wccCheck != 4:
+                wccCheck = 5    # Return exit code 5, certificate not found
+        # If we do not have permission
+        else:
+            wccCheck = 15    # Return exit code 15 (permission denied)
     # Return our exit code
     return wccCheck
 
@@ -840,135 +963,110 @@ def get_firewall_aliases(server, user, key):
         aliases["ec"] = 3 if not check_auth(server, user, key) else aliases["ec"]    # Return exit code 3 if we could not sign in
     # Check that authentication succeeded
     if aliases["ec"] == 2:
-        # GET aliases IDs from /firewall_aliases.php
+        # Check that we had permissions for this page
         getAliasIds = http_request(url + "/firewall_aliases.php?tab=all", {}, {}, "GET")    # Save our GET HTTP response
-        aliasIdTableBody = getAliasIds["text"].split("<tbody>")[1].split("</tbody>")[0]    # Pull the table body data from HTML response
-        aliasIdTableRows = aliasIdTableBody.replace("\n", "").replace("\t", "").replace("</tr>", "").split("<tr>")    # Split our table body into list of rows
-        # Loop through our list and grab our data values
-        idList = []    # Pre-define our idList. This will be populated by our loop
-        for row in aliasIdTableRows:
-            # Check that the row contains an ID
-            if "id=" in row:
-                id = row.split("id=")[1].split("\';\">")[0]    # Pull the ID from the row
-                idList.append(id)    # Add our current ID to the list
-        # Loop through alias IDs and save values to our dictionary
-        for i in idList:
-            getAliasIdInfo = http_request(url + "/firewall_aliases_edit.php?id=" + i, {}, {}, "GET")    # Save our GET HTTP response
-            name = getAliasIdInfo["text"].split("<input class=\"form-control\" name=\"name\" id=\"name\" type=\"text\" value=\"")[1].split("\"")[0]    # Save our alias name
-            descr = getAliasIdInfo["text"].split("<input class=\"form-control\" name=\"descr\" id=\"descr\" type=\"text\" value=\"")[1].split("\"")[0]    # Save our alias description
-            type = ""    # Pre-define our type as empty string. This should be populated by our loop below
-            # Loop through our type <select> tag to see what type is currently selected
-            typeOpt = getAliasIdInfo["text"].split("<select class=\"form-control\" name=\"type\" id=\"type\">")[1].split("</select>")[0].split("<option ")    # Save our typeOptions as a list
-            for opt in typeOpt:
-                # Check if option is selected
-                if "selected" in opt:
-                    type = opt.split("value=\"")[1].split("\"")[0]    # Save our type value
-            # Save our dict values
-            aliases["aliases"][name] = {"name" : name, "type" : type, "descr" : descr, "entries" : {}}
-            # Loop through our alias entries and pull data
-            counter = 0    # Define a counter to keep track of loop cycle
-            while True:
-                # Check if there is an address value for our current index
-                if "id=\"address" + str(counter) in getAliasIdInfo["text"]:
-                    aliases["aliases"][name]["entries"][counter] = {} if counter not in aliases["aliases"][name]["entries"] else aliases["aliases"][name]["entries"][counter]    # Create our counter dictionary if not existing
-                    aliases["aliases"][name]["entries"][counter]["id"] = counter    # Save our counter value
-                    aliases["aliases"][name]["entries"][counter]["value"] = getAliasIdInfo["text"].split("id=\"address" + str(counter))[1].split("value=\"")[1].split("\"")[0]    # Save our entry value
-                    aliases["aliases"][name]["entries"][counter]["descr"] = getAliasIdInfo["text"].split("id=\"detail" + str(counter))[1].split("value=\"")[1].split("\"")[0]    # Save our entry value
-                    subnetOpt = getAliasIdInfo["text"].split("id=\"address_subnet" + str(counter))[1].split("</select>")[0].split("<option")    # Return our list of subnets
-                    # Loop through list of subnets to see if one is selected
-                    for opt in subnetOpt:
-                        if "selected" in opt:
-                            aliases["aliases"][name]["entries"][counter]["subnet"] = opt.split("value=\"")[1].split("\"")[0]    # Save our subnet value
-                            break    # Break our loop as there should only be one match
-                        else:
-                            aliases["aliases"][name]["entries"][counter]["subnet"] = "0"
-                    counter = counter + 1  # Increase our counter
-                # If there is not an address value for our current index, we know we have made it through all entries
-                else:
-                    break
-        # Assign our success code
-        aliases["ec"] = 0
+        getAliasEdit = http_request(url + "/firewall_aliases_edit.php", {}, {}, "GET")  # Save our GET HTTP response
+        if check_permissions(getAliasIds) and check_permissions(getAliasEdit):
+            # GET aliases IDs from /firewall_aliases.php
+            aliasIdTableBody = getAliasIds["text"].split("<tbody>")[1].split("</tbody>")[0]    # Pull the table body data from HTML response
+            aliasIdTableRows = aliasIdTableBody.replace("\n", "").replace("\t", "").replace("</tr>", "").split("<tr>")    # Split our table body into list of rows
+            # Loop through our list and grab our data values
+            idList = []    # Pre-define our idList. This will be populated by our loop
+            for row in aliasIdTableRows:
+                # Check that the row contains an ID
+                if "id=" in row:
+                    id = row.split("id=")[1].split("\';\">")[0]    # Pull the ID from the row
+                    idList.append(id)    # Add our current ID to the list
+            # Loop through alias IDs and save values to our dictionary
+            for i in idList:
+                getAliasIdInfo = http_request(url + "/firewall_aliases_edit.php?id=" + i, {}, {}, "GET")    # Save our GET HTTP response
+                check_permissions(getAliasIdInfo)  # Check that we had permissions for this page
+                name = getAliasIdInfo["text"].split("<input class=\"form-control\" name=\"name\" id=\"name\" type=\"text\" value=\"")[1].split("\"")[0]    # Save our alias name
+                descr = getAliasIdInfo["text"].split("<input class=\"form-control\" name=\"descr\" id=\"descr\" type=\"text\" value=\"")[1].split("\"")[0]    # Save our alias description
+                type = ""    # Pre-define our type as empty string. This should be populated by our loop below
+                # Loop through our type <select> tag to see what type is currently selected
+                typeOpt = getAliasIdInfo["text"].split("<select class=\"form-control\" name=\"type\" id=\"type\">")[1].split("</select>")[0].split("<option ")    # Save our typeOptions as a list
+                for opt in typeOpt:
+                    # Check if option is selected
+                    if "selected" in opt:
+                        type = opt.split("value=\"")[1].split("\"")[0]    # Save our type value
+                # Save our dict values
+                aliases["aliases"][name] = {"name" : name, "type" : type, "descr" : descr, "id" : i, "entries" : {}}
+                # Loop through our alias entries and pull data
+                counter = 0    # Define a counter to keep track of loop cycle
+                while True:
+                    # Check if there is an address value for our current index
+                    if "id=\"address" + str(counter) in getAliasIdInfo["text"]:
+                        aliases["aliases"][name]["entries"][counter] = {} if counter not in aliases["aliases"][name]["entries"] else aliases["aliases"][name]["entries"][counter]    # Create our counter dictionary if not existing
+                        aliases["aliases"][name]["entries"][counter]["id"] = str(counter)    # Save our counter value
+                        aliases["aliases"][name]["entries"][counter]["value"] = getAliasIdInfo["text"].split("id=\"address" + str(counter))[1].split("value=\"")[1].split("\"")[0]    # Save our entry value
+                        aliases["aliases"][name]["entries"][counter]["descr"] = getAliasIdInfo["text"].split("id=\"detail" + str(counter))[1].split("value=\"")[1].split("\"")[0]    # Save our entry value
+                        subnetOpt = getAliasIdInfo["text"].split("id=\"address_subnet" + str(counter))[1].split("</select>")[0].split("<option")    # Return our list of subnets
+                        # Loop through list of subnets to see if one is selected
+                        for opt in subnetOpt:
+                            if "selected" in opt:
+                                aliases["aliases"][name]["entries"][counter]["subnet"] = opt.split("value=\"")[1].split("\"")[0]    # Save our subnet value
+                                break    # Break our loop as there should only be one match
+                            else:
+                                aliases["aliases"][name]["entries"][counter]["subnet"] = "0"
+                        counter = counter + 1  # Increase our counter
+                    # If there is not an address value for our current index, we know we have made it through all entries
+                    else:
+                        break
+            # Assign our success code
+            aliases["ec"] = 0
+        # If we did not have permission to access the page
+        else:
+            aliases["ec"] = 15    # Return exit code 15 (permission denied)
     # Return our dictionary
     return aliases
-
-# get_firewall_alias_id() parses the HTML data to retrieve the pfAlias ID. Returns list [alias ID , exit code]
-def get_firewall_alias_id(server, user, key, aliasName):
-    # Local Variables
-    aliasId = ['',2]    # Assigns aliasId list. The first item value will populate our alias ID, the second item value will be our exit code integer
-    url = wcProtocol + "://" + server    # Populate our base URL
-    pfAliasPage = "firewall_aliases_edit.php?id="    # Assign the base firewall > aliases page
-    targetTrData = []    # Define empty list for targetTrData, this will be populated later if data exists
-     # Check for errors and assign exit codes accordingly
-    aliasId[1] = 10 if check_dns_rebind_error(url) else aliasId[1]    # Return exit code 10 if dns rebind error found
-    aliasId[1] = 6 if not validate_platform(url) else aliasId[1]    # Check that our URL appears to be pfSense
-    # Check if we have not encountered an error that would prevent us from authenticating
-    if aliasId[1] == 2:
-        aliasId[1] = 3 if not check_auth(server, user, key) else aliasId[1]    # Return exit code 3 if we could not sign in
-    # Check that authentication succeeded
-    if aliasId[1] == 2:
-        # Use GET to pull existing Firewall Aliases from pfSense
-        getPfAliasRaw = http_request(url + "/firewall_aliases.php", {}, {}, "GET")
-        try:
-            targetDivData = getPfAliasRaw["text"].split("<div class=\"table-responsive\">")[1].split("</div>")[0]    # Targets the "table-responsive" div on our page
-            targetTbodyData = targetDivData.split("<tbody>")[1].split("</tbody>")[0]    # Targets tbody data from div and saves it to a string
-            targetTrData = targetTbodyData.split("<tr>")    # Targets tr data from our tbody and splits it into a list
-        # We are only expecting IndexErrors here, except that error and return it's own exit code (1)
-        except IndexError:
-            aliasId[1] = 1    # Return exit code 1 meaning we were unable to find the specified alias name
-        # Check if we have at least one tr in our list
-        if len(targetTrData) > 0:
-            # Cycle through alias tables to test for our criteria
-            for tr in targetTrData:
-                if pfAliasPage in tr:
-                    targetTdData = tr.replace("\t", "").split("<td ondblclick")[1].split("</td>")[0]
-                    targetAliasName = targetTdData.split(";\">\n")[1]
-                    targetAliasId = targetTdData.split(pfAliasPage)[1].split("\';")[0]
-                    # Check if our aliasName matches the name in the table data
-                    if aliasName == targetAliasName:
-                        aliasId[0] = targetAliasId    # Assign our aliasId list value 0 to the matching aliasId
-                        aliasId[1] = 0    # Assign our aliasId list value 1 to integer 0 (success exit code)
-                        break    # We found our ID so we do not need to continue the loop
-                    # If not, return error code 4 (no alias found)
-                    else:
-                        aliasId[1] = 4    # Assign our aliasId list value 1 to integer 4 (no alias found)
-    # Return our aliasId List
-    return aliasId
 
 # modify_firewall_alias() takes and existing firewall alias and changes configured values within
 def modify_firewall_alias(server, user, key, aliasName, newValues):
     # Local Variables
-    aliasIdData = get_firewall_alias_id(server, user, key, aliasName)    # Get the alias ID to determine which alias to modify
-    aliasModded = 2 if aliasIdData[1] == 0 else aliasIdData[1]    # Default aliasModded to 2 if authentication didn't fail when we pulled the aliasIDData, otherwise return 3 (auth failed)
+    aliasIdData = get_firewall_aliases(server, user, key)    # Get the alias ID to determine which alias to modify
+    aliasModded = 2 if aliasIdData["ec"] == 0 else aliasIdData["ec"]    # Default aliasModded to 2 if authentication didn't fail when we pulled the aliasIDData, otherwise return 3 (auth failed)
     url = wcProtocol + "://" + server    # Populate our base URL
     # If we successfully pulled our aliasId
-    if aliasIdData[0] != '' and aliasIdData[1] == 0:
-        aliasIdValue = aliasIdData[0]   # Assign the actual alias ID value to a variable
-        aliasPostData = {"__csrf_magic" : get_csrf_token(wcProtocol + "://" + server + "/firewall_aliases_edit.php?id=" + aliasIdValue, "GET"), "name" : aliasName, "type" : "host", "tab" : "ip", "id" : aliasIdValue, "save" : "Save"}
-        valueToAdd = ""    # Initialize our new alias entry values
-        detailToAdd = ""   # Initializes our new alias entry description values
-        defaultDetail = "Auto-added by " + user + " on " + localHostname    # Initializes our default alias entry description value
-        # Check if the newValues needs to be parsed
-        if "," in newValues:
-            newValueList = newValues.split(",")    # Split our values to a list
-            newValIndex = 0    # Assign an index tracker for our for loop. This will be used to track the address value in our post request
-            # For each value in our list, print an address to our post request
-            for val in newValueList:
-                # Only add the value if the list item is not emtpy
-                if val != '':
-                    aliasPostData["address" + str(newValIndex)] = val
-                    aliasPostData["detail" + str(newValIndex)] = defaultDetail
-                    newValIndex = newValIndex + 1    # Increase our loop index
-        # Else if our data did not need to be parsed
+    if aliasModded == 2:
+        # Check if our alias name is in our dictionary
+        if aliasName in aliasIdData["aliases"]:
+            aliasIdValue = aliasIdData["aliases"][aliasName]["id"]   # Assign the actual alias ID value to a variable
+            aliasPostData = {"__csrf_magic" : get_csrf_token(wcProtocol + "://" + server + "/firewall_aliases_edit.php?id=" + aliasIdValue, "GET"), "name" : aliasName, "type" : "host", "tab" : "ip", "id" : aliasIdValue, "save" : "Save"}
+            valueToAdd = ""    # Initialize our new alias entry values
+            detailToAdd = ""   # Initializes our new alias entry description values
+            defaultDetail = "Auto-added by " + user + " on " + localHostname    # Initializes our default alias entry description value
+            # Check if the newValues needs to be parsed
+            if "," in newValues:
+                newValueList = newValues.split(",")    # Split our values to a list
+                newValIndex = 0    # Assign an index tracker for our for loop. This will be used to track the address value in our post request
+                # For each value in our list, print an address to our post request
+                for val in newValueList:
+                    # Only add the value if the list item is not emtpy
+                    if val != '':
+                        aliasPostData["address" + str(newValIndex)] = val
+                        aliasPostData["detail" + str(newValIndex)] = defaultDetail
+                        newValIndex = newValIndex + 1    # Increase our loop index
+            # Else if our data did not need to be parsed
+            else:
+                aliasPostData["address0"] = newValues
+                aliasPostData["detail0"] = defaultDetail
+            # Make our post request if no errors were encountered
+            if aliasModded == 2:
+                # Check that we have permissions to run
+                postPfAliasData = http_request(url + "/firewall_aliases_edit.php", {}, {}, "GET")
+                if check_permissions(postPfAliasData):
+                    # Submit our post requests
+                    postPfAliasData = http_request(url + "/firewall_aliases_edit.php", aliasPostData, {}, "POST")
+                    saveChangesPostData = {"__csrf_magic" : get_csrf_token(wcProtocol + "://" + server + "/firewall_aliases.php", "GET"), "apply" : "Apply Changes"}
+                    saveChanges = http_request(url + "/firewall_aliases.php", saveChangesPostData, {}, "POST")
+                    aliasModded = 0    # Assign our success exit code
+                # If we did not have permissions to the page
+                else:
+                    aliasModded = 15    # Return exit code 15 (permission denied)
+        # If our alias name was not found
         else:
-            aliasPostData["address0"] = newValues
-            aliasPostData["detail0"] = defaultDetail
-        # Make our post request if no errors were encountered
-        if aliasModded == 2:
-            # Submit our post requests
-            postPfAliasData = http_request(url + "/firewall_aliases_edit.php", aliasPostData, {}, "POST")
-            saveChangesPostData = {"__csrf_magic" : get_csrf_token(wcProtocol + "://" + server + "/firewall_aliases.php", "GET"), "apply" : "Apply Changes"}
-            saveChanges = http_request(url + "/firewall_aliases.php", saveChangesPostData, {}, "POST")
-            aliasModded = 0    # Assign our success exit code
+            aliasModded = 4    # Return exit code 4 (alias not found)
     # Return our integer exit code
     return aliasModded
 
@@ -1048,7 +1146,7 @@ def main():
                                 print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
                                 sys.exit(1)
                         # If user wants to print all items
-                        elif dnsFilter.upper() in ("--ALL","-A") or dnsFilter.upper() in ("DEFAULT", "-D") or "--host=" in dnsFilter:
+                        elif dnsFilter.upper() in ("--ALL","-A") or dnsFilter.upper() in ("DEFAULT", "-D") or dnsFilter.startswith(("--host=","-h=")):
                             # Format and print our header
                             print(idHead + hostHead + domainHead + ipHead + descrHead)
                             # Loop through each domain dictionary and pull out the host data
@@ -1063,7 +1161,7 @@ def main():
                                     descr = structure_whitespace(hostValue["descr"], 30, " ", True) + " "    # Format our description data
                                     alias = ""    # Initialize our alias data as empty string. This will populate below if user requested ALL
                                     # Check that user wants all info first
-                                    if dnsFilter.upper() == "--ALL" or "--host" in dnsFilter:
+                                    if dnsFilter.upper() == "--ALL" or dnsFilter.startswith(("--host=","-h=")):
                                         # Loop through our aliases and try to parse data if it exists
                                         for aliasKey, aliasValue in hostValue["alias"].items():
                                             try:
@@ -1071,7 +1169,7 @@ def main():
                                             except KeyError:
                                                 alias = ""    # Assign empty string
                                     # If we are only looking for one value
-                                    if "--host=" in dnsFilter:
+                                    if dnsFilter.startswith(("--host=","-h=")):
                                         aliasMatch = False    # Predefine aliasMatch. This will change to true if the FQDN matches an alias exactly
                                         fqdnFilter = dnsFilter.replace("--host=", "").replace("-h=", "")    # Remove expected strings from argument to get our hostname filter
                                         # Check if domain is our hostFilter
@@ -1436,12 +1534,12 @@ def main():
                                 #print(structure_whitespace("#", 3, "-", False) + " " + structure_whitespace("NAME", 37, "-", True) + " " + structure_whitespace("ISSUER", 11, "-", True) + " " + structure_whitespace("CN", 25, "-", True) + " " + structure_whitespace("VALID UNTIL", 25, "-", True) + " " + "IN USE")
                             # For each certificate found in the list, print the information
                             for key,value in getCertData["certs"].items():
-                                id = structure_whitespace(str(key), 3, " ", False)    # Set our cert ID to the key value
+                                id = structure_whitespace(str(key), 3, " ", False) + " "   # Set our cert ID to the key value
                                 name = structure_whitespace(value["name"], 37, " ", False) + " "    # Set name to the name dict value
                                 isr = structure_whitespace(value["issuer"], 11, " ", True) + " "    # Set name to the issuer dict value
                                 cn = structure_whitespace(value["cn"], 25, " ", True) + " "    # Set name to the cn dict value
                                 start = structure_whitespace(value["start"], 25, " ", True) + " "    # Set name to the start date dict value
-                                exp = structure_whitespace(value["start"], 25, " ", True) + " "    # Set name to the expiration date dict value
+                                exp = structure_whitespace(value["expire"], 25, " ", True) + " "    # Set name to the expiration date dict value
                                 srl = structure_whitespace(value["serial"], 30, " ", True) + " "    # Set name to the start date dict value
                                 iu = structure_whitespace("ACTIVE", 6, " ", False) if value["active"] else ""    # Set the inuse keyword if the cert is in use
                                 # Check if verbose mode was selected
@@ -1449,7 +1547,7 @@ def main():
                                     print(id + name + isr + cn + start + exp + srl + iu)
                                 # If no specific mode was specified assume the default
                                 else:
-                                    print(id + name + isr + cn + start + iu)
+                                    print(id + name + isr + cn + exp + iu)
                     # Print error if no data was returned and exit with ec 1
                     else:
                         print(get_exit_message("read_err", "", pfsenseAction, "", ""))
@@ -1478,6 +1576,7 @@ def main():
                 descr = sixthArg if sixthArg is not None else input("Description [optional]: ")    # Get our vlan description argument or prompt for input if missing
                 user = eighthArg if seventhArg == "-u" and eighthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = tenthArg if ninthArg == "-p" and tenthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                priority = "" if priority.upper() == "DEFAULT" else priority    # Assign a default priority if requested
                 descr = "Auto-added by " + user + " on " + localHostname if descr.upper() == "DEFAULT" else descr    # Assign a default description if requested
                 # Try to convert number strings to integers for conditional checks
                 try:
@@ -1503,7 +1602,66 @@ def main():
                 else:
                     print(get_exit_message("invalid_vlan", pfsenseServer, pfsenseAction, vlanId, ""))
                     sys.exit(1)    # Exit on non-zero
-            # Assign functions for flag --read-vlans
+            # Assign functions for flag --read-arp
+            elif pfsenseAction == "--read-arp":
+                arpFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                arpTable = get_arp_table(pfsenseServer, user, key)
+                idHead = structure_whitespace("#", 5, "-", True) + " "    # Format our ID header value
+                interfaceHead = structure_whitespace("INTERFACE", 15, "-", True) + " "    # Format our interface header header value
+                ipHead = structure_whitespace("IP", 15, "-", True) + " "    # Format our ip header value
+                hostHead = structure_whitespace("HOSTNAME", 20, "-", True) + " "    # Format our host header value
+                macAddrHead = structure_whitespace("MAC ADDR", 20, "-", True) + " "    # Format our mac address header value
+                vendorHead = structure_whitespace("MAC VENDOR", 12, "-", True) + " "    # Format our mac vendor header value
+                expireHead = structure_whitespace("EXPIRES", 12, "-", True) + " "    # Format our expiration header value
+                linkHead = structure_whitespace("LINK", 8, "-", True) + " "    # Format our link type header value
+                header = idHead + interfaceHead + ipHead + hostHead + macAddrHead + vendorHead + expireHead + linkHead   # Format our print header
+                # Check that we did not receive an error pulling the data
+                if arpTable["ec"] == 0:
+                    # Loop through each value in our dictionary
+                    counter = 0    # Assign a loop counter
+                    for key,value in arpTable["arp"].items():
+                        id = structure_whitespace(str(key), 5, " ", True) + " "    # Get our entry number
+                        interface = structure_whitespace(value["interface"], 15, " ", True)  + " "   # Get our interface ID
+                        ip = structure_whitespace(value["ip"], 15, " ", True) + " "    # Get our IP
+                        hostname = structure_whitespace(value["hostname"], 20, " ", True) + " "    # Get our hostnames
+                        macAddr = structure_whitespace(value["mac_addr"], 20, " ", True) + " "    # Get our MAC address level
+                        macVendor = structure_whitespace(value["mac_vendor"], 12, " ", True) + " "   # Get our MAC vendor
+                        expires = structure_whitespace(value["expires"], 12, " ", True) + " "   # Get our expiration
+                        link = structure_whitespace(value["type"], 8, " ", True) + " "   # Get our link
+                        # If we want to return all values
+                        if arpFilter.upper() in ["-A", "--ALL"]:
+                            print(header) if counter == 0 else None  # Print our header if we are just starting loop
+                            print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
+                        # If we want to export values as JSON
+                        elif arpFilter.startswith(("--json=", "-j=")):
+                            jsonPath = arpFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                            jsonName = "pf-readarp-" + currentDate + ".json"    # Assign our default JSON name
+                            # Check if JSON path exists
+                            if os.path.exists(jsonPath):
+                                # Open an export file and save our data
+                                jsonExported = export_json(arpTable["arp"], jsonPath, jsonName)
+                                # Check if the file now exists
+                                if jsonExported:
+                                    print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                                    break    # Break the loop as we only need to perfrom this function once
+                                else:
+                                    print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                    sys.exit(1)
+                            # Print error if path does not exist
+                            else:
+                                print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # If we did not recognize the requested filter print our error message
+                        else:
+                            print(get_exit_message("invalid_filter", pfsenseServer, pfsenseAction, arpFilter, ""))
+                            sys.exit(1)    # Exit on non-zero status
+                        counter = counter + 1  # Increase our counter
+                # If we received an error, print the error message and exit on non-zero ec
+                else:
+                    print(get_exit_message(arpTable["ec"], pfsenseServer, pfsenseAction, "", ""))
+                    sys.exit(arpTable["ec"])
             elif pfsenseAction == "--read-vlans":
                 # Action Variables
                 vlanFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string

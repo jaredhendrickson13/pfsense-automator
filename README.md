@@ -25,7 +25,7 @@ Commands
     - **Arguments**:
         - `<iface>` : Specify an existing physical interface to add the VLAN tag to (e.g. igb1, re0)
         - `<vlan_id>` : Specify what VLAN ID to tag the interface as (1-4094)
-        - `<priority>` : Specify the VLAN priority value for QoS purposes (0-7)
+        - `<priority>` : Specify the VLAN priority value for QoS purposes (0-7). Use `default` for no value.
         - `<descr>` : Specify a description for the VLAN. Use `default` to add the username and local hostname of individual running the command
 
 - `--read-vlans` : Attempts to read current configured VLANs
@@ -35,6 +35,12 @@ Commands
         - `--vlan=<vlan_id>` : Return only one entry given a valid VLAN ID
         - `--iface=<iface_id>` (`-i`) : Return only VLANs configured on a specific interface 
         - `--json=<directory_path>` : Exports VLAN data to a JSON file given an existing directory
+
+- `--read-arp` : Reads the ARP table
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-arp <argument>`
+    - **Arguments**:
+        - `--all` (`-a`) : Return all available ARP table values 
+        - `--json=<directory_path>` : Exports ARP data to a JSON file given an existing directory
 
 - `--add-dns` : Attempts to add a DNS entry to Unbound (DNS Resolver). This will not overwrite existing DNS entries
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-dns <subdomain> <primary_domain> <IP> <description>`
