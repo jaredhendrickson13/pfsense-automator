@@ -91,6 +91,28 @@ def get_exit_message(ec, server, command, data1, data2):
             "export_success": "Successfully exported ARP table to " + data1,
             "export_fail": "Failed to export ARP table as JSON"
         },
+        # Error/success messages for --add-tunable flag
+        "--add-tunable" : {
+            0 : "Successfully added tunable `" + data1 + "` to `" + server + "`",
+            2 : "Error: Unexpected error adding system tunable",
+            3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
+            8 : "Error: Tunable `" + data1 + "` already exists",
+            10 : globalDnsRebindMsg,
+            15 : globalPermissionErrMsg
+        },
+        # Error/success messages for --read-tunables flag
+        "--read-tunables": {
+            2: "Error: Unexpected error reading system tunables",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err": "Error: export directory `" + data1 + "` does not exist",
+            "export_success": "Successfully exported tunable data to " + data1,
+            "export_fail": "Failed to export tunable data as JSON"
+        },
         # Error/success messages for --read-vlans flag
         "--read-vlans" : {
             2 : "Error: Unexpected error reading VLAN configuration. You may not have any VLANs configured",
@@ -479,6 +501,75 @@ def get_arp_table(server, user, key):
             arpTable["ec"] = 15    # Assign exit code 15 if we did not have permission (permission denied)
     # Return our dictionary
     return arpTable
+
+# get_system_tunables() pulls the System Tunable values from the advanced settings
+def get_system_tunables(server, user, key):
+    tunables = {"ec" : 2, "tunables" : {}}    # Pre-define our function dictionary
+    url = wcProtocol + "://" + server    # Assign our base URL
+    # Submit our intitial request and check for errors
+    tunables["ec"] = 10 if check_dns_rebind_error(url) else tunables["ec"]    # Return exit code 10 if dns rebind error found
+    tunables["ec"] = 6 if not validate_platform(url) else tunables["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if tunables["ec"] == 2:
+        tunables["ec"] = 3 if not check_auth(server, user, key) else tunables["ec"]    # Return exit code 3 if we could not sign in
+    # Check if we encountered any errors before staring
+    if tunables["ec"] == 2:
+        # Check that we had permissions for this page
+        getTunableData = http_request(url + "/system_advanced_sysctl.php", {}, {}, "GET")    # Pull our Interface data using GET HTTP
+        if check_permissions(getTunableData):
+            tunableBody = getTunableData["text"].split("<table class")[1].split("</table>")[0]  # Find the data table body
+            tunableRows = tunableBody.replace("\t", "").replace("\n", "").replace("</tr>", "").split("<tr>")  # Find each of our table rows
+            # Loop through our rows to pick out our values
+            counter = 0    # Assign a loop counter
+            for row in tunableRows:
+                # Check that the row is not empty
+                if row != "" and "<td>" in row:
+                    tunableData = row.split("<td>")    # Split our data into a list
+                    tunableName = tunableData[1].replace("</td>", "")    # Assign our tunable name to a variables
+                    tunables["tunables"][tunableName] = {"name" : tunableName} if tunableName not in tunables["tunables"] else tunables["tunables"][tunableName]    # Define our value dict if one doesn't exist
+                    tunables["tunables"][tunableName]["descr"] = tunableData[2].replace("</td>", "")    # Assign our tunable description to a variables
+                    tunables["tunables"][tunableName]["value"] = tunableData[3].replace("</td>", "")    # Assign our tunable value to a variables
+                    tunables["tunables"][tunableName]["id"] = tunableData[4].replace("</td>", "").split("href=\"system_advanced_sysctl.php?act=edit&amp;id=")[1].split("\"")[0]    # Assign our tunable description to a variables
+            # Set our exit code to zero if our dictionary is populated
+            tunables["ec"] = 0 if len(tunables["tunables"]) > 0 else tunables["ec"]
+        # If we did not have permission to the tunables
+        else:
+            tunables["ec"] = 15    # Assign exit code 15 if we did not have permission (permission denied)
+    # Return our dictionary
+    return tunables
+
+# add_system_tunable() adds a new system tunable
+def add_system_tunable(server, user, key, name, descr, value):
+    # Local Variables
+    tunableAdded = 2    # Assign our default return code. (2 means generic failure)
+    url = wcProtocol + "://" + server    # Assign our base URL
+    existingTunables = get_system_tunables(server, user, key)    # Get our dictionary of configured tunables
+    tunablePostData = {"__csrf_magic" : "", "tunable" : name, "value" : value, "descr" : descr, "save" : "Save"}    # Assign our POST data
+    # Check if we got our VLAN dictionary successfully
+    if existingTunables["ec"] == 0:
+        # Loop through existing VLAN to check that our requested VLAN ID isn't already configured
+        if name in existingTunables["tunables"]:
+            tunableAdded = 8  # Return exit code 8 (tunable already exists)
+        # Check that we did not encounter an error
+        if tunableAdded == 2:
+            # Use GET HTTP to see what interfaces are available
+            getExistingIfaces = http_request(url + "/system_advanced_sysctl.php?act=edit", {}, {}, "GET")    # Get our HTTP response
+            # Check that we had permissions for this page
+            if check_permissions(getExistingIfaces):
+                tunablePostData["__csrf_magic"] = get_csrf_token(url + "/system_advanced_sysctl.php?act=edit", "GET")    # Update our CSRF token
+                postTunable = http_request(url + "/system_advanced_sysctl.php?act=edit", tunablePostData, {}, "POST")    # POST our data
+                applyTunableData = {"__csrf_magic" : get_csrf_token(url + "/system_advanced_sysctl.php", "GET"), "apply" : "Apply Changes"}    # Assign our post data to apply changes
+                applyTunable = http_request(url + "/system_advanced_sysctl.php", applyTunableData, {}, "POST")    # POST our data
+                updatedTunables = get_system_tunables(server, user, key)    # Get our updated dictionary of configured tunables
+                tunableAdded = 0 if name in updatedTunables["tunables"] else tunableAdded    # Check that our new value is listed
+            # If we didn't have permissions to add the tunable
+            else:
+                tunableAdded = 15  # Return exit code 15 (permission denied)
+    # If we couldn't pull existing tunables
+    else:
+        tunableAdded = existingTunables["ec"]    # Return the exit code that was returned by our get_existing_tunables()
+    # Return our exit code
+    return tunableAdded
 
 # get_vlan_ids() pulls existing VLAN configurations from Interfaces > Assignments > VLANs
 def get_vlan_ids(server, user, key):
@@ -1662,6 +1753,73 @@ def main():
                 else:
                     print(get_exit_message(arpTable["ec"], pfsenseServer, pfsenseAction, "", ""))
                     sys.exit(arpTable["ec"])
+            # Assign functions for --add-tunable
+            elif pfsenseAction == "--add-tunable":
+                # Action Variables
+                tunableName = thirdArg if thirdArg is not None else input("Tunable name: ")    # Assign our tunable name to the third argument passed in
+                tunableDescr = fourthArg if fourthArg is not None else input("Description: ")    # Assign our tunable description to the fourth argument passed in
+                tunableValue = fifthArg if fifthArg is not None else input("Value: ")   # Assign our tunable description to the fifth argument passed in
+                user = seventhArg if sixthArg == "-u" and seventhArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = ninthArg if eighthArg == "-p" and ninthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                tunableDescr = "Auto-added by" + user + " on " + localHostname if tunableDescr.upper() == "DEFAULT" else tunableDescr    # Assign default description value
+                addTunableEc = add_system_tunable(pfsenseServer, user, key, tunableName, tunableDescr, tunableValue)    # Save the exit code of our POST function
+                print(get_exit_message(addTunableEc, pfsenseServer, pfsenseAction, tunableName, ""))    # Print our exit message
+                sys.exit(addTunableEc)    # Exit on our exit code
+
+            # Assign functions for flag --read-arp
+            elif pfsenseAction == "--read-tunables":
+                tunableFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                tunables = get_system_tunables(pfsenseServer, user, key)
+                numHead = structure_whitespace("#", 3, "-", True) + " "    # Format our number header value
+                nameHead = structure_whitespace("NAME", 40, "-", True) + " "    # Format our name header value
+                descrHead = structure_whitespace("DESCRIPTION", 25, "-", True) + " "    # Format our ip description value
+                valueHead = structure_whitespace("VALUE", 15, "-", True) + " "    # Format our host value value
+                idHead = structure_whitespace("ID", 40, "-", True) + " "    # Format our host value value
+                header = numHead + nameHead + descrHead + valueHead + idHead  # Format our print header
+                # Check that we did not receive an error pulling the data
+                if tunables["ec"] == 0:
+                    # Loop through each value in our dictionary
+                    counter = 1    # Assign a loop counter
+                    for key,value in tunables["tunables"].items():
+                        tunNumber = structure_whitespace(str(counter), 3, " ", True) + " "    # Get our entry number
+                        tunName = structure_whitespace(value["name"], 40, " ", True)  + " "   # Get our tunable name
+                        tunDescr = structure_whitespace(value["descr"], 25, " ", True) + " "    # Get our tunable description
+                        tunValue = structure_whitespace(value["value"], 15, " ", True) + " "    # Get our value
+                        tunId = structure_whitespace(value["id"], 40, " ", True) + " "    # Get our ID
+                        # If we want to return all values
+                        if tunableFilter.upper() in ["-A", "--ALL", "-D", "DEFAULT"]:
+                            print(header) if counter == 1 else None  # Print our header if we are just starting loop
+                            print(tunNumber + tunName + tunDescr + tunValue + tunId)    # Print our data values
+                        # If we want to export values as JSON
+                        elif tunableFilter.startswith(("--json=", "-j=")):
+                            jsonPath = tunableFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                            jsonName = "pf-readtunables-" + currentDate + ".json"    # Assign our default JSON name
+                            # Check if JSON path exists
+                            if os.path.exists(jsonPath):
+                                # Open an export file and save our data
+                                jsonExported = export_json(tunableFilter["arp"], jsonPath, jsonName)
+                                # Check if the file now exists
+                                if jsonExported:
+                                    print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                                    break    # Break the loop as we only need to perfrom this function once
+                                else:
+                                    print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                    sys.exit(1)
+                            # Print error if path does not exist
+                            else:
+                                print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # If we did not recognize the requested filter print our error message
+                        else:
+                            print(get_exit_message("invalid_filter", pfsenseServer, pfsenseAction, tunableFilter, ""))
+                            sys.exit(1)    # Exit on non-zero status
+                        counter = counter + 1  # Increase our counter
+                # If we received an error, print the error message and exit on non-zero ec
+                else:
+                    print(get_exit_message(tunables["ec"], pfsenseServer, pfsenseAction, "", ""))
+                    sys.exit(tunables["ec"])
             elif pfsenseAction == "--read-vlans":
                 # Action Variables
                 vlanFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string

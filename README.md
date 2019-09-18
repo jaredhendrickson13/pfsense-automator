@@ -42,6 +42,19 @@ Commands
         - `--all` (`-a`) : Return all available ARP table values 
         - `--json=<directory_path>` : Exports ARP data to a JSON file given an existing directory
 
+- `--add-tunable` : Adds a new system tunable to System > Advanced > System Tunables
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-tunable <tunable_name> <descr> <value>`
+    - **Arguments**:
+        - `<tunable_name>` : Specify the tunable name, this should correspond with a valid system tunable
+        - `<descr>` : Add a description for the system tunable
+        - `<value>` : Specify the tunable's value. This is typically a integer value
+   
+- `--read-tunables` : Reads the system tunables from System > Advanced > System Tunables
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-tunables <argument>`
+    - **Arguments**:
+        - `--all` (`-a`, `-d`, `default`) : Return all available ARP table values 
+        - `--json=<directory_path>` : Exports system tunables data to a JSON file given an existing directory
+        
 - `--add-dns` : Attempts to add a DNS entry to Unbound (DNS Resolver). This will not overwrite existing DNS entries
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-dns <subdomain> <primary_domain> <IP> <description>`
     - **Arguments**: 
