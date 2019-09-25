@@ -36,6 +36,17 @@ Commands
         - `--iface=<iface_id>` (`-i`) : Return only VLANs configured on a specific interface 
         - `--json=<directory_path>` : Exports VLAN data to a JSON file given an existing directory
 
+- `--read-adv-admin` : Attempts to read current Advanced Admin settings from /system_advanced_admin.php
+- **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-adv-admin <argument>`
+- **Arguments**:
+    - `--all` (`-a`,`-d`,`default`) : Return all configured Advanced Admin options
+    - `--webconfigurator` (`-wc`) : Return only configuration from the webConfigurator section of /system_advanced_admin.php
+    - `--secure-shell` (`-ssh`) : Return only configuration from the Secure Shell section of /system_advanced_admin.php
+    - `--login-protection` (`-lp`) : Return only configuration from the Login Protection section of /system_advanced_admin.php
+    - `--serial-communications` (`-sc`) : Return only configuration from the Serial Communications section of /system_advanced_admin.php
+    - `--console-options` (`-co`) : Return only configuration from the Console options section of /system_advanced_admin.php
+    - `--json=<directory_path>` : Exports VLAN data to a JSON file given an existing directory
+
 - `--read-arp` : Reads the ARP table
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-arp <argument>`
     - **Arguments**:

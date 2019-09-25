@@ -6,7 +6,6 @@
 # pfSense's many PHP configuration scripts. All functions in this script mimic changes regularly made in a browser
 # and utilizes pfSense's built-in CSRF checks, input validation, and configuration parsing
 # ----------------------------------------------------------------------------------------------------------------
-
 # IMPORT MODULES
 import platform
 import datetime
@@ -78,6 +77,18 @@ def get_exit_message(ec, server, command, data1, data2):
             15 : globalPermissionErrMsg,
             "invalid_vlan" : "Error: VLAN `" + data1 + "` out of range. Expected 1-4094",
             "invalid_priority" : "Error: VLAN priority `" + data1 + "` out of range. Expected 0-7"
+        },
+        # Error/success messages for --read-adv-admin flag
+        "--read-adv-admin": {
+            2: "Error: Unexpected error reading Advanced Settings",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err": "Error: export directory `" + data1 + "` does not exist",
+            "export_success": "Successfully exported advanced admin options to " + data1,
+            "export_fail": "Failed to export advanced admin options as JSON"
         },
         # Error/success messages for --read-vlans flag
         "--read-arp": {
@@ -259,7 +270,7 @@ def http_request(url, data, headers, method):
         # Process to run if a GET request was requested
         if method.upper() == "GET":
             try:
-                req = req_session.get(url, headers=headers, verify=False, timeout=30)
+                req = req_session.get(url, headers=headers, verify=False, timeout=45)
             except requests.exceptions.ReadTimeout:
                 print(get_exit_message("timeout", "", "generic", "", ""))
                 sys.exit(1)
@@ -267,7 +278,7 @@ def http_request(url, data, headers, method):
         elif method.upper() == "POST":
             # Try to open the connection and gather data
             try:
-                req = req_session.post(url, data=data, headers=headers, verify=False, timeout=30)
+                req = req_session.post(url, data=data, headers=headers, verify=False, timeout=45)
             except requests.exceptions.ReadTimeout:
                 print(get_exit_message("timeout", "", "generic", "", ""))
                 sys.exit(1)
@@ -459,6 +470,184 @@ def get_csrf_token(url, type):
         csrfToken = csrfParsed if len(csrfParsed) is csrfTokenLength else ""    # Assign the csrfToken to the parsed value if the expected string length is found
         return csrfToken    # Return our token
 
+# get_system_advanced_admin() pulls our current configuration from System > Advanced > Admin Access and saves it to a dictionary
+def get_system_advanced_admin(server, user, key):
+    # Pre-define our function dictionary
+    advAdm = {"ec" : 2, "adv_admin" : {
+        "webconfigurator" : {},
+        "secure_shell" : {},
+        "login_protection" : {"whitelist" : {}},
+        "serial_communcations" : {},
+        "console_options" : {}
+    }}
+    url = wcProtocol + "://" + server    # Assign our base URL
+    # Submit our intitial request and check for errors
+    advAdm["ec"] = 10 if check_dns_rebind_error(url) else advAdm["ec"]    # Return exit code 10 if dns rebind error found
+    advAdm["ec"] = 6 if not validate_platform(url) else advAdm["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if advAdm["ec"] == 2:
+        advAdm["ec"] = 3 if not check_auth(server, user, key) else advAdm["ec"]    # Return exit code 3 if we could not sign in
+    # Check if we encountered any errors before staring
+    if advAdm["ec"] == 2:
+        # Check that we had permissions for this page
+        getAdvAdmData = http_request(url + "/system_advanced_admin.php", {}, {}, "GET")    # Pull our admin data using GET HTTP
+        if check_permissions(getAdvAdmData):
+            # Check that we have a webconfigurator table
+            if "<h2 class=\"panel-title\">webConfigurator</h2>" in getAdvAdmData["text"]:
+                # Parse the values from the 'WEBCONFIGURATOR' section of /system_advanced_admin.php
+                wcAdmTableBody = getAdvAdmData["text"].split("<h2 class=\"panel-title\">webConfigurator</h2>")[1].split("<span class=\"help-block\">When this is unchecked, the browser tab shows")[0]  # Find the data table body
+                advAdm["adv_admin"]["webconfigurator"]["webguiproto"] = "http" if "checked=\"checked\"" in wcAdmTableBody.split("id=\"webguiproto_http:")[1].split("</label>")[0] else "https"    # Check what protocol webconfigurator is using
+                advAdm["adv_admin"]["webconfigurator"]["webguiport"] = wcAdmTableBody.split("id=\"webguiport\"")[1].split("value=\"")[1].split("\"")[0] if "webguiport" in wcAdmTableBody else ""    # Check the max processes webconfigurator allows
+                advAdm["adv_admin"]["webconfigurator"]["max_procs"] = wcAdmTableBody.split("id=\"max_procs\"")[1].split("value=\"")[1].split("\"")[0] if "max_procs" in wcAdmTableBody else ""   # Check the max processes webconfigurator allows
+                advAdm["adv_admin"]["webconfigurator"]["webgui-redirect"] = True if "webgui-redirect" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"webgui-redirect\"")[1].split("</label>")[0] else False    # Check if HTTPS redirect is enabled
+                advAdm["adv_admin"]["webconfigurator"]["webgui-hsts"] = True if "webgui-hsts" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"webgui-hsts\"")[1].split("</label>")[0] else False    # Check if strict transport security is enabled
+                advAdm["adv_admin"]["webconfigurator"]["ocsp-staple"] = True if "ocsp-staple" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"ocsp-staple\"")[1].split("</label>")[0] else False    # Check if OCSP stapling is enabled
+                advAdm["adv_admin"]["webconfigurator"]["loginautocomplete"] = True if "loginautocomplete" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"loginautocomplete\"")[1].split("</label>")[0] else False    # Check if login auto completeion is enabled
+                advAdm["adv_admin"]["webconfigurator"]["webgui-login-messages"] = True if "webgui-login-messages" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"webgui-login-messages\"")[1].split("</label>")[0] else False    # Check if login logging is enabled
+                advAdm["adv_admin"]["webconfigurator"]["noantilockout"] = True if "noantilockout" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"noantilockout\"")[1].split("</label>")[0] else False    # Check if anti-lockout rule is disabled
+                advAdm["adv_admin"]["webconfigurator"]["nodnsrebindcheck"] = True if "nodnsrebindcheck" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"noantilockout\"")[1].split("</label>")[0] else False    # Check if DNS rebind checking is enabled
+                advAdm["adv_admin"]["webconfigurator"]["nohttpreferercheck"] = True if "nohttpreferercheck" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"nohttpreferercheck\"")[1].split("</label>")[0] else False    # Check if HTTP-REFERRER checks are enabled
+                advAdm["adv_admin"]["webconfigurator"]["pagenamefirst"] = True if "pagenamefirst" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"pagenamefirst\"")[1].split("</label>")[0] else False    # Check if page name first is checked (adds hostname to browser tab first)
+                advAdm["adv_admin"]["webconfigurator"]["althostnames"] = wcAdmTableBody.split("id=\"althostnames\"")[1].split("value=\"")[1].split("\"")[0] if "althostnames" in wcAdmTableBody else ""    # Save our alternate hostname values to a string
+                # Loop through our WC SSL CERTIFICATE to find which is being used
+                sslCertOpt = wcAdmTableBody.split("id=\"ssl-certref\">")[1].split("</select>")[0].split("<option value=\"")
+                for cert in sslCertOpt:
+                    # Check our certificate is selected
+                    if "selected>" in cert:
+                        advAdm["adv_admin"]["webconfigurator"]["ssl-certref"] = cert.split("\"")[0]    # Assign our cert ref ID to our dictionary
+                        break
+                    # If no certificate was found, assume default
+                    else:
+                        advAdm["adv_admin"]["webconfigurator"]["ssl-certref"] = ""    # Assign default if not found
+            # If we did not have a webconfigurator table
+            else:
+                # Assign all default webconfigurator values
+                advAdm["adv_admin"]["webconfigurator"] = {
+                    "webguiproto" : "",
+                    "webguiport" : "", "max_procs" : "",
+                    "webgui-redirect" : False,
+                    "webgui-hsts" : False,
+                    "ocsp-staple" : False,
+                    "loginautocomplete" : False,
+                    "webgui-login-messages" : False,
+                    "noantilockout" : False,
+                    "nodnsrebindcheck" : False,
+                    "nohttpreferercheck" : False,
+                    "pagenamefirst" : False,
+                    "althostnames" : "",
+                    "ssl-certref" : ""
+                }
+            # Check that we have a configuration table for SECURE SHELL
+            if "<h2 class=\"panel-title\">Secure Shell</h2>" in getAdvAdmData["text"]:
+                # Parse the values from the 'SECURE SHELL' section of /system_advanced_admin.php
+                sshAdmTableBody = getAdvAdmData["text"].split("<h2 class=\"panel-title\">Secure Shell</h2>")[1].split("<span class=\"help-block\">Note: Leave this blank for the default of 22")[0]  # Find the data table body
+                advAdm["adv_admin"]["secure_shell"]["enablesshd"] = True if "enablesshd" in sshAdmTableBody and "checked=\"checked\"" in sshAdmTableBody.split("id=\"enablesshd\"")[1].split("</label>")[0] else False    # Check if SSH  is enabled
+                advAdm["adv_admin"]["secure_shell"]["sshdagentforwarding"] = True if "sshdagentforwarding" in sshAdmTableBody and "checked=\"checked\"" in sshAdmTableBody.split("id=\"sshdagentforwarding\"")[1].split("</label>")[0] else False    # Check if SSH forwarding  is enabled
+                advAdm["adv_admin"]["secure_shell"]["sshport"] = sshAdmTableBody.split("id=\"sshport\"")[1].split("value=\"")[1].split("\"")[0] if "value=\"" in sshAdmTableBody.split("id=\"sshport\"")[1] and "sshport" in sshAdmTableBody else ""   # Save our SSH port value
+                # Check if we are running pfsense 2.4.4+
+                if "<select class=\"form-control\" name=\"sshdkeyonly\" id=\"sshdkeyonly\">" in sshAdmTableBody:
+                    # Loop through our SSL authentication options and find the currently select option
+                    sshAuthOpt = sshAdmTableBody.split("id=\"sshdkeyonly\">")[1].split("</select>")[0].split("<option value=\"") if "sshdkeyonly" in sshAdmTableBody else []    # Find our options if available, otherwise assume default
+                    for auth in sshAuthOpt:
+                        # Check our certificate is selected
+                        if "selected>" in auth:
+                            advAdm["adv_admin"]["secure_shell"]["sshdkeyonly"] = auth.split("\"")[0]    # Assign our auth type to our dictionary
+                            break
+                        # If the default is used
+                        else:
+                            advAdm["adv_admin"]["secure_shell"]["sshdkeyonly"] = "disabled"    # Assign our default value
+                # Check if we are running an older version of pfSense
+                elif "<label class=\"chkboxlbl\"><input name=\"sshdkeyonly\"" in sshAdmTableBody:
+                    advAdm["adv_admin"]["secure_shell"]["sshdkeyonly"] = True if "checked=\"checked\"" in sshAdmTableBody.split("id=\"sshdkeyonly\"")[1].split("</label>")[0] else False    # Assign our ssh auth type
+            # If we did not have a secure shell table
+            else:
+                # Assign all default secure shell values
+                advAdm["adv_admin"]["secure_shell"] = {
+                    "enablesshd" : False,
+                    "sshdagentforwarding" : False,
+                    "sshport" : "",
+                    "sshdkeyonly" : ""
+                }
+            # Parse the values from the 'LOGIN PROTECTION' section of /system_advanced_admin.php
+            if "<h2 class=\"panel-title\">Login Protection</h2>" in getAdvAdmData["text"]:
+                loginAdmTableBody = getAdvAdmData["text"].split("<h2 class=\"panel-title\">Login Protection</h2>")[1].split("class=\"btn btn-success addbtn")[0]  # Find the data table body
+                advAdm["adv_admin"]["login_protection"]["sshguard_threshold"] = loginAdmTableBody.split("id=\"sshguard_threshold\"")[1].split("value=\"")[1].split("\"")[0] if "sshguard_threshold" in loginAdmTableBody else ""    # Save our protection threshold value (number of allowed attacks)
+                advAdm["adv_admin"]["login_protection"]["sshguard_blocktime"] = loginAdmTableBody.split("id=\"sshguard_blocktime\"")[1].split("value=\"")[1].split("\"")[0] if "sshguard_blocktime" in loginAdmTableBody else ""   # Save our protection block value (duration of block)
+                advAdm["adv_admin"]["login_protection"]["sshguard_detection_time"] = loginAdmTableBody.split("id=\"sshguard_detection_time\"")[1].split("value=\"")[1].split("\"")[0] if "sshguard_detection_time" in loginAdmTableBody else ""    # Save our protection detection value (duration until threshold resets)
+                # Loop through our whitelisted hosts (hosts that are not included in login protection)
+                loginWhitelist = loginAdmTableBody.split("<input class=\"form-control\" name=\"address")
+                for host in loginWhitelist:
+                    # Check that we have a value and selections
+                    if "value=" in host and "<select" in host:
+                        addressId = host.split("\"")[0]    # Get our address ID
+                        value = host.split("value=\"")[1].split("\"")[0]
+                        # Loop through our subnet select options and pull our subnet
+                        subnetData = host.split("<select class=\"form-control pfIpMask\"")[1].split("</select>")[0]
+                        subnetSelection = subnetData.split("<option value=\"")    # Split our subnet options into a list
+                        for net in subnetSelection:
+                            # Check if this subnet is selected
+                            if "selected>" in net:
+                                subnet = net.split("\"")[0]
+                                break
+                            # If a selected subnet was not found assume the default
+                            else:
+                                subnet = ""    # Assign our DEFAULT subnet
+                        advAdm["adv_admin"]["login_protection"]["whitelist"][addressId] = {"id" : "address" + addressId, "value" : value, "subnet" : subnet}
+            # If we did not have a login protection table
+            else:
+                # Assign all default login protection values
+                advAdm["adv_admin"]["login_protection"] = {
+                    "sshguard_threshold" : "",
+                    "sshguard_blocktime" : "",
+                    "sshguard_detection_time" : "",
+                    "whitelist" : {}
+                }
+            # Parse the values from the 'SERIAL COMMUNICATIONS' section of /system_advanced_admin.php
+            if "<h2 class=\"panel-title\">Serial Communications</h2>" in getAdvAdmData["text"]:
+                serialAdmTableBody = getAdvAdmData["text"].split("<h2 class=\"panel-title\">Serial Communications</h2>")[1].split("<span class=\"help-block\">Select the preferred console")[0]  # Find the data table body
+                advAdm["adv_admin"]["serial_communcations"]["enableserial"] = True if "enableserial" in serialAdmTableBody and "checked=\"checked\"" in serialAdmTableBody.split("id=\"enableserial\"")[1].split("</label>")[0] else False    # Check if serial communication is enabled
+                # Loop through our SERIALSPEEDS to find our selected speed value
+                speedSelect = serialAdmTableBody.split("id=\"serialspeed\">")[1].split("</select>")[0].split("<option value=\"")    # Target our serial speed options
+                for spd in speedSelect:
+                    # Check that it meets our expected criteria
+                    if "selected>" in spd:
+                        advAdm["adv_admin"]["serial_communcations"]["serialspeed"] = spd.split("\"")[0]    # Save our serial speed
+                        break
+                    else:
+                        advAdm["adv_admin"]["serial_communcations"]["serialspeed"] = ""    # Assume default if speed not found in current loop cycle
+                # Loop through our console types to find our primaryconsole
+                consoleSelect = serialAdmTableBody.split("id=\"primaryconsole\">")[1].split("</select>")[0].split("<option value=\"")    # Target our serial console options
+                for csl in consoleSelect:
+                    # Check that it meets our expected criteria
+                    if "selected>" in csl:
+                        advAdm["adv_admin"]["serial_communcations"]["primaryconsole"] = csl.split("\"")[0]    # Save our serial console type
+                        break
+                    else:
+                        advAdm["adv_admin"]["serial_communcations"]["primaryconsole"] = ""    # Assume default if console type not found in current loop cycle
+            # If we did not have a serial communications table
+            else:
+                # Assign all default serial communications values
+                advAdm["adv_admin"]["serial_communcations"] = {
+                    "enableserial" : False,
+                    "serialspeed" : "",
+                    "primaryconsole" : ""
+                }
+            # Parse the values from the 'CONSOLE OPTIONS' section of /system_advanced_admin.php
+            if "<h2 class=\"panel-title\">Console Options</h2>" in getAdvAdmData["text"]:
+                consoleAdmTableBody = getAdvAdmData["text"].split("<h2 class=\"panel-title\">Console Options</h2>")[1].split("<div class=\"col-sm-10 col-sm-offset-2\">")[0]  # Find the data table body
+                advAdm["adv_admin"]["console_options"]["disableconsolemenu"] = True if "disableconsolemenu" in consoleAdmTableBody and "checked=\"checked\"" in consoleAdmTableBody.split("id=\"disableconsolemenu\"")[1].split("</label>")[0] else False    # Check if console is password protected
+            # If we did not hae a console options table
+            else:
+                # Assign all default console option values
+                advAdm["adv_admin"]["console_options"]["disableconsolemenu"] = False
+            # Update to exit code 0 (success) if we populated our dictionary
+            advAdm["ec"] = 0
+        # If we did not have permissions
+        else:
+            advAdm["ec"] = 15    # Assign exit code 15 (permission denied)
+    # Return our exit code
+    return advAdm
+
 # get_arp_table() pulls our pfSense's current ARP table
 def get_arp_table(server, user, key):
     arpTable = {"ec" : 2, "arp" : {}}    # Pre-define our function dictionary
@@ -490,9 +679,10 @@ def get_arp_table(server, user, key):
                     # Assign a mac vendor value if one exists
                     if "<small>" in arpTableData[3]:
                         arpTable["arp"][counter]["mac_vendor"] = arpTableData[3].split("<small>")[1].replace("</small>", "").replace("(", "").replace(")", "").replace("</td>", "")    # Assign our mac vendor value to the dictionary
-                    arpTable["arp"][counter]["hostname"] = arpTableData[4].replace("</td>", "")    # Assign our hostname value to the dictionary
-                    arpTable["arp"][counter]["expires"] = arpTableData[5].replace("</td>", "").replace("Expires in ", "")   # Assign our expiration value to the dictionary
-                    arpTable["arp"][counter]["type"] = arpTableData[6].replace("</td>", "")    # Assign our link type value to the dictionary
+                    # Check if extra values exist (pfSense 2.4+)
+                    arpTable["arp"][counter]["hostname"] = arpTableData[4].replace("</td>", "") if len(arpTableData) > 4 else ""    # Assign our hostname value to the dictionary
+                    arpTable["arp"][counter]["expires"] = arpTableData[5].replace("</td>", "").replace("Expires in ", "") if len(arpTableData) > 6 else ""   # Assign our expiration value to the dictionary
+                    arpTable["arp"][counter]["type"] = arpTableData[6].replace("</td>", "") if len(arpTableData) > 6 else ""    # Assign our link type value to the dictionary
                     counter = counter + 1    # Increase our counter
             # Set our exit code to zero if our dictionary is populated
             arpTable["ec"] = 0 if len(arpTable) > 0 else arpTable["ec"]
@@ -1820,6 +2010,93 @@ def main():
                 else:
                     print(get_exit_message(tunables["ec"], pfsenseServer, pfsenseAction, "", ""))
                     sys.exit(tunables["ec"])
+            # Functions and processes for flag --read-adv-admin
+            elif pfsenseAction == "--read-adv-admin":
+                advAdmFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                advAdmData = get_system_advanced_admin(pfsenseServer, user, key)    # Get our data dictionary
+                # Check our data pull exit code
+                if advAdmData["ec"] == 0:
+                    # Check which filter/argument was passed in
+                    # If user wants to print webconfigurator settings, or everything
+                    if advAdmFilter.upper() in ["-WC", "--WEBCONFIGURATOR", "-A", "--ALL", "DEFAULT", "-D"]:
+                        # Print all our advanced admin WEBCONFIGURATOR
+                        print(structure_whitespace("--WEBCONFIGURATOR", 50, "-", False))
+                        print(structure_whitespace("Protocol: ", 30, " ", False) + advAdmData["adv_admin"]["webconfigurator"]["webguiproto"])
+                        print(structure_whitespace("SSL Certificate: ", 30, " ", False) + advAdmData["adv_admin"]["webconfigurator"]["ssl-certref"])
+                        print(structure_whitespace("TCP Port: ", 30, " ", False) + advAdmData["adv_admin"]["webconfigurator"]["webguiport"])
+                        print(structure_whitespace("Max Processes: ", 30, " ", False) + advAdmData["adv_admin"]["webconfigurator"]["max_procs"])
+                        print(structure_whitespace("WebUI Redirect: ", 30, " ", False) + str(advAdmData["adv_admin"]["webconfigurator"]["webgui-redirect"]))
+                        print(structure_whitespace("HSTS: ", 30, " ", False) + str(advAdmData["adv_admin"]["webconfigurator"]["webgui-hsts"]))
+                        print(structure_whitespace("OCSP Stapling: ", 30, " ", False) + str(advAdmData["adv_admin"]["webconfigurator"]["ocsp-staple"]))
+                        print(structure_whitespace("Login Auto-complete: ", 30, " ", False) + str(advAdmData["adv_admin"]["webconfigurator"]["loginautocomplete"]))
+                        print(structure_whitespace("Login Messages: ", 30, " ", False) + str(advAdmData["adv_admin"]["webconfigurator"]["webgui-login-messages"]))
+                        print(structure_whitespace("Disable Anti-lockout: ", 30, " ", False) + str(advAdmData["adv_admin"]["webconfigurator"]["noantilockout"]))
+                        print(structure_whitespace("Disable DNS Rebind Check: ", 30, " ", False) + str(advAdmData["adv_admin"]["webconfigurator"]["nodnsrebindcheck"]))
+                        print(structure_whitespace("Alternate Hostnames: ", 30, " ", False) + advAdmData["adv_admin"]["webconfigurator"]["althostnames"])
+                        print(structure_whitespace("Disable HTTP_REFERRER: ", 30, " ", False) + str(advAdmData["adv_admin"]["webconfigurator"]["nohttpreferercheck"]))
+                        print(structure_whitespace("Browser Tab Text: ", 30, " ", False) + str(advAdmData["adv_admin"]["webconfigurator"]["pagenamefirst"]))
+                    # If user wants to print SECURE SHELL settings, or everything
+                    if advAdmFilter.upper() in ["-SSH", "--SECURE-SHELL", "-A", "--ALL", "DEFAULT", "-D"]:
+                        # Print all our advanced admin SECURE SHELL
+                        print(structure_whitespace("--SECURE SHELL", 50, "-", False))
+                        print(structure_whitespace("Enable SSH: ", 30, " ", False) + str(advAdmData["adv_admin"]["secure_shell"]["enablesshd"]))
+                        print(structure_whitespace("Enable SSH-Agent Forwarding: ", 30, " ", False) + str(advAdmData["adv_admin"]["secure_shell"]["sshdagentforwarding"]))
+                        print(structure_whitespace("SSH Port: ", 30, " ", False) + str(advAdmData["adv_admin"]["secure_shell"]["sshport"]))
+                        print(structure_whitespace("SSH Authentication Type: ", 30, " ", False) + str(advAdmData["adv_admin"]["secure_shell"]["sshdkeyonly"]))
+                    # If user wants to print LOGIN PROTECTION settings, or everything
+                    if advAdmFilter.upper() in ["-LC", "--LOGIN-PROTECTION", "-A", "--ALL", "DEFAULT", "-D"]:
+                        # Print all our advanced admin LOGIN PROTECTION
+                        print(structure_whitespace("--LOGIN PROTECTION", 50, "-", False))
+                        print(structure_whitespace("Threat Threshold: ", 30, " ", False) + str(advAdmData["adv_admin"]["login_protection"]["sshguard_threshold"]))
+                        print(structure_whitespace("Threat Blocktime: ", 30, " ", False) + str(advAdmData["adv_admin"]["login_protection"]["sshguard_blocktime"]))
+                        print(structure_whitespace("Threat Detection Time: ", 30, " ", False) + str(advAdmData["adv_admin"]["login_protection"]["sshguard_detection_time"]))
+                        print("Whitelist:")
+                        # Loop through our whitelisted addresses
+                        for key,value in advAdmData["adv_admin"]["login_protection"]["whitelist"].items():
+                            # Check that we have a legitimate value
+                            if value["value"] != "":
+                                # Check if subnet was specified
+                                addrStr = "  - " + value["value"]   # Assign our IP to our address string
+                                if value["subnet"] != "":
+                                    addrStr = addrStr + "/" + value["subnet"]    # Append our subnet to our address string
+                                print(addrStr)    # Print our address string
+                    # If user wants to print SERIAL COMMUNICATIONS settings, or everything
+                    if advAdmFilter.upper() in ["-SC", "--SERIAL-COMMUNICATIONS", "-A", "--ALL", "DEFAULT", "-D"]:
+                        # Print all our advanced admin SERIAL COMMUNICATIONS
+                        print(structure_whitespace("--SERIAL COMMUNICATIONS", 50, "-", False))
+                        print(structure_whitespace("Enable Serial Communication: ", 30, " ", False) + str(advAdmData["adv_admin"]["serial_communcations"]["enableserial"]))
+                        print(structure_whitespace("Serial Speed: ", 30, " ", False) + str(advAdmData["adv_admin"]["serial_communcations"]["serialspeed"]))
+                        print(structure_whitespace("Console Type: ", 30, " ", False) + str(advAdmData["adv_admin"]["serial_communcations"]["primaryconsole"]))
+                    # If user wants to print CONSOLE OPTIONS settings, or everything
+                    if advAdmFilter.upper() in ["-CO", "--CONSOLE-OPTIONS", "-A", "--ALL", "DEFAULT", "-D"]:
+                        # Print all our advanced admin CONSOLE OPTIONS
+                        print(structure_whitespace("--CONSOLE OPTIONS", 50, "-", False))
+                        print(structure_whitespace("Password Protect Console: ", 30, " ", False) + str(advAdmData["adv_admin"]["console_options"]["disableconsolemenu"]))
+                    # If we want to export values as JSON
+                    if advAdmFilter.startswith(("--json=", "-j=")):
+                        jsonPath = advAdmFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                        jsonName = "pf-readadvadm-" + currentDate + ".json"    # Assign our default JSON name
+                        # Check if JSON path exists
+                        if os.path.exists(jsonPath):
+                            # Open an export file and save our data
+                            jsonExported = export_json(advAdmData["adv_admin"], jsonPath, jsonName)
+                            # Check if the file now exists
+                            if jsonExported:
+                                print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                            else:
+                                print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # Print error if path does not exist
+                        else:
+                            print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                            sys.exit(1)
+                # If we received a non-zero exit code, print our exit message
+                else:
+                    print(get_exit_message(advAdmData["ec"], pfsenseServer, pfsenseAction, advAdmFilter, ""))
+                    sys.exit(advAdmData["ec"])
+            # Functions and process for flag --read-vlans
             elif pfsenseAction == "--read-vlans":
                 # Action Variables
                 vlanFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string
