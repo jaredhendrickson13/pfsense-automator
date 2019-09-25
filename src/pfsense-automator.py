@@ -1157,7 +1157,8 @@ def set_wc_certificate(server, user, key, certName):
     url = wcProtocol + "://" + server    # Populate our base URL
     selectedWcc = ""    # Initialize variable to track which certificate is currently selected
     newWcc = ""    # Initialize variable to track the certRef of our certificate to add
-    wccFound = False    # Initialize boolean to track whether a certificate match has already occured
+    wccFound = False    # Initialize boolean to track whether a certificate match has already occurred
+    existingWccData = get_system_advanced_admin(server, user, key)["adv_admin"]    # Pull our existing configuration before making changes
     wccData = {"__csrf_magic" : "", "webguiproto" : wcProtocol, "ssl-certref" : ""}
      # Check for errors and assign exit codes accordingly
     wccCheck = 10 if check_dns_rebind_error(url) else wccCheck    # Return exit code 10 if dns rebind error found
@@ -1201,6 +1202,22 @@ def set_wc_certificate(server, user, key, certName):
             if wccFound:
                 # Check if our certRef values are different (meaning we are actually changing the certificate)
                 if newWcc != selectedWcc:
+                    # Loop through our existing /system_advanced_admin.php configuration and add the data to the POST request
+                    for table,data in existingWccData.items():
+                        # Loop through each value in the table dictionaries
+                        for key,value in data.items():
+                            value = "yes" if value == True else value    # Swap true values to "yes"
+                            value = "" if value == False else value    # Swap false values to empty string
+                            # Check if we are checking our login protection whitelist
+                            if key == "whitelist":
+                                # Add each of our whitelisted IPs to our post data
+                                for id,info in value.items():
+                                    addrId = info["id"]
+                                    wccData[addrId] = info["value"]
+                                    wccData["address_subnet" + id] = info["subnet"]
+                            # If we are not adding whitelist values, simply add the key and value
+                            else:
+                                wccData[key] = value    # Populate our data to our POST data
                     # Update our CSRF, certref, and take our POST request and save a new GET request that should show our new configuration
                     wccData["__csrf_magic"] = get_csrf_token(url + "/system_advanced_admin.php", "GET")
                     wccData["ssl-certref"] = newWcc
