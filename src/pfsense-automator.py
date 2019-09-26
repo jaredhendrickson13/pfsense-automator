@@ -33,7 +33,6 @@ tenthArg = sys.argv[10] if len(sys.argv) > 10 else None    # Declare 'tenthArg' 
 localUser = getpass.getuser()    # Save our current user's username to a string
 localHostname = socket.gethostname()    # Gets the hostname of the system running pfsense-controller
 currentDate = datetime.datetime.now().strftime("%Y%m%d%H%M%S")    # Get the current date in a file supported format
-cookieLocation = "/tmp/cookie-" + currentDate + ".pf"    # Set the default cookie location
 wcProtocol = "https"    # Assigns whether the script will use HTTP or HTTPS connections
 wcProtocolPort = 443 if wcProtocol == 'https' else 80    # If wcProtocol is set to https, assign a integer value to coincide
 req_session = requests.Session()    # Start our requests session
@@ -467,6 +466,7 @@ def check_dns_rebind_error(url):
 
 # check_auth() runs a basic authentication check. If the authentication is successful a true value is returned
 def check_auth(server, user, key):
+    print(wcProtocol + str(wcProtocolPort))
     # Local Variables
     authSuccess = False    # Set the default return value to false
     url = wcProtocol + "://" + server    # Assign our base URL
@@ -1477,8 +1477,22 @@ def modify_firewall_alias(server, user, key, aliasName, newValues):
 # main() is the primary function that maps arguments to other functions
 def main():
     # Local Variables
-    pfsenseServer = filter_input(firstArg)    # Assign the server value to the firstArg (filtered)
+    global wcProtocol    # Make wcProtocol modifiable globally
+    global wcProtocolPort    # Make wcProtocolPort modifiable globally
+    pfsenseServer = firstArg    # Assign the server value to the firstArg (filtered)
     pfsenseAction = filter_input(secondArg)    # Assign the action to execute (filtered)
+    # Check if user requests HTTPS override
+    if pfsenseServer.lower().startswith("http://"):
+        pfsenseServer = pfsenseServer.replace("http://", "")    # Replace the http:// protocol from the servername
+        wcProtocol = "http"    # Reassign our webconfigurator protocol
+        wcProtocolPort = 80    # Assign webconfigurator port to HTTP (80)
+    # Check if user requests non-standard UI port
+    if ":" in pfsenseServer:
+        nonStdPort = pfsenseServer.split(":")[1]    # Assign the value after our colon to a variable
+        nonStdPortInt = int(nonStdPort) if nonStdPort.isdigit() else 999999    # Assign a integer value of our port variable, if it is not a number save out of range
+        wcProtocolPort = nonStdPortInt if 1 <= nonStdPortInt <= 65535 else wcProtocolPort    # Change our webUI port specification if it is a valid number
+        pfsenseServer = pfsenseServer.replace(":" + nonStdPort, "")    # Remove our port specification from our servername string
+    pfsenseServer = filter_input(pfsenseServer.replace("http://", "").replace("https://", ""))    # Filter our hostname/IP input
     # Check if we are simply requesting the software version
     if firstArg.upper() in ("--VERSION", "-V"):
         print(get_exit_message("version", "", "generic", "", ""))
