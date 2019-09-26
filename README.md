@@ -47,6 +47,25 @@ Commands
         - `--console-options` (`-co`) : Return only configuration from the Console options section of /system_advanced_admin.php
         - `--json=<directory_path>` : Exports VLAN data to a JSON file given an existing directory
 
+- `--setup-ssh` : Configures `sshd` on pfSense
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-ssh <enable_ssh> <ssh_port> <ssh_auth> <sshagent_forwarding>`
+    - **Arguments**:
+        - `<enable_ssh>` - Either enables or disables `sshd` on pfSense
+            - `enable` - Enables `sshd`
+            - `disable` - Disables `sshd`
+            - `default` - Retains existing value (empty input in interactive mode assumes `default`)
+        - `<ssh_port>` - Either enables or disables `sshd` on pfSense
+            - `1-65535` - Specifies a valid port number between 1 and 65535
+            - `default` - Retains existing value (empty input in interactive mode assumes `default`)
+         - `<ssh_auth>` - Choose the SSH authentication method
+            - `passwd` - Allow either password or public key authentication
+            - `key` - Enforce public key authentication only
+            - `both` - Require both a password and public for authentication (only available on pfSense 2.4.4 or later)
+            - `<sshagent_forwarding>` - Enable or disable ssh-agent forwarding (only available on pfSense 2.4.4-p1)
+                - `enable` - Enables ssh-agent forwarding
+                - `disable` - Disables ssh-agent forwarding
+                - `default` - Retains existing value (empty input in interactive mode assumes `default`)
+
 - `--read-arp` : Reads the ARP table
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-arp <argument>`
     - **Arguments**:

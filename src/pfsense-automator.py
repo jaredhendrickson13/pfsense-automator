@@ -90,6 +90,22 @@ def get_exit_message(ec, server, command, data1, data2):
             "export_success": "Successfully exported advanced admin options to " + data1,
             "export_fail": "Failed to export advanced admin options as JSON"
         },
+        # Error/success messages for --set-ssh
+        "--setup-ssh": {
+            0: "Successfully setup SSH on `" + server + "`",
+            2: "Error: Unexpected error configuring SSH",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            20: "Error: Unknown legacy SSH authentication option `" + data1 + "`",
+            21: "Error: Unknown SSH authentication option `" + data1 + "`",
+            "invalid_enable" : "Error: Unknown enable value `" + data1 + "`",
+            "invalid_port" : "Error: SSH port `" + data1 + "` out of range. Expected 1-65535",
+            "invalid_auth" : "Error: Unknown SSH authentication method `" + data1 + "`",
+            "invalid_forward" : "Error: Unknown ssh-agent forwarding value `" + data1 + "`",
+            "no_change" : "INFO: No differing values were requested"
+        },
         # Error/success messages for --read-vlans flag
         "--read-arp": {
             2: "Error: Unexpected error reading ARP table",
@@ -455,10 +471,16 @@ def check_auth(server, user, key):
     authSuccess = False    # Set the default return value to false
     url = wcProtocol + "://" + server    # Assign our base URL
     authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define a dictionary for our login POST data
-    # Complete authentication
-    authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
-    authSuccess = True if not "Username or Password incorrect" in authCheck["text"] and "class=\"fa fa-sign-out\"" in authCheck["text"] else authSuccess    # Return false if login failed
-    return(authSuccess)
+    preAuthCheck = http_request(url + "/index.php", {}, {}, "GET")
+    # Check that we're not already signed
+    if not "class=\"fa fa-sign-out\"" in preAuthCheck["text"]:
+        # Complete authentication
+        authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
+        authSuccess = True if not "Username or Password incorrect" in authCheck["text"] and "class=\"fa fa-sign-out\"" in authCheck["text"] else authSuccess    # Return false if login failed
+    # Else return true because we are already signed in
+    else:
+        authSuccess = True
+    return authSuccess
 
 # get_csrf_token() makes an initial connection to pfSense to retrieve the CSRF token. This supports both GET and POST requests
 def get_csrf_token(url, type):
@@ -547,6 +569,7 @@ def get_system_advanced_admin(server, user, key):
                 # Check if we are running pfsense 2.4.4+
                 if "<select class=\"form-control\" name=\"sshdkeyonly\" id=\"sshdkeyonly\">" in sshAdmTableBody:
                     # Loop through our SSL authentication options and find the currently select option
+                    advAdm["adv_admin"]["secure_shell"]["legacy"] = False    # Assign a value to indicate this isn't a legacy pfSense version
                     sshAuthOpt = sshAdmTableBody.split("id=\"sshdkeyonly\">")[1].split("</select>")[0].split("<option value=\"") if "sshdkeyonly" in sshAdmTableBody else []    # Find our options if available, otherwise assume default
                     for auth in sshAuthOpt:
                         # Check our certificate is selected
@@ -559,6 +582,7 @@ def get_system_advanced_admin(server, user, key):
                 # Check if we are running an older version of pfSense
                 elif "<label class=\"chkboxlbl\"><input name=\"sshdkeyonly\"" in sshAdmTableBody:
                     advAdm["adv_admin"]["secure_shell"]["sshdkeyonly"] = True if "checked=\"checked\"" in sshAdmTableBody.split("id=\"sshdkeyonly\"")[1].split("</label>")[0] else False    # Assign our ssh auth type
+                    advAdm["adv_admin"]["secure_shell"]["legacy"] = True    # Assign a value to indicate this is a legacy pfSense version
             # If we did not have a secure shell table
             else:
                 # Assign all default secure shell values
@@ -648,6 +672,88 @@ def get_system_advanced_admin(server, user, key):
     # Return our exit code
     return advAdm
 
+# get_system_advanced_admin_post_data() converts our advanced admin dictionary to a POST data dictionary
+def get_system_advanced_admin_post_data(dictionary):
+    # Local Variables
+    postData = {}    # Pre-define our return value as empty dictionary
+    # Loop through our existing /system_advanced_admin.php configuration and add the data to the POST request
+    for table, data in dictionary.items():
+        # Loop through each value in the table dictionaries
+        for key, value in data.items():
+            value = "yes" if value == True else value  # Swap true values to "yes"
+            value = "" if value == False else value  # Swap false values to empty string
+            # Check if we are checking our login protection whitelist
+            if key == "whitelist":
+                # Add each of our whitelisted IPs to our post data
+                for id, info in value.items():
+                    addrId = info["id"]
+                    postData[addrId] = info["value"]
+                    postData["address_subnet" + id] = info["subnet"]
+            # If we are not adding whitelist values, simply add the key and value
+            else:
+                postData[key] = value  # Populate our data to our POST data
+    # Return our POST data dictionary
+    return postData
+
+# setup_ssh() configures sshd settings found in /system_advanced_admin.php
+def setup_ssh(server, user, key, enable, port, auth, forwarding):
+    # Local Variables
+    sshConfigured = 2    # Pre-define our exit code as 2
+    url = wcProtocol + "://" + server    # Assign our base URL
+    existingAdvAdm = get_system_advanced_admin(server, user, key)    # Get our dictionary of configured advanced options
+    # Check if we got our advanced admin dictionary successfully
+    if existingAdvAdm["ec"] == 0:
+        # FORMAT OUR POST DATA
+        sshPostData = get_system_advanced_admin_post_data(existingAdvAdm["adv_admin"])    # Convert our advanced admin data into a POST dictionary
+        # Update our CSRF, certref, and take our POST request and save a new GET request that should show our new configuration
+        sshPostData["__csrf_magic"] = get_csrf_token(url + "/system_advanced_admin.php", "GET")
+        # Check that we do not want to retain our current value
+        if enable.upper() != "DEFAULT":
+            sshPostData["enablesshd"] = "yes" if enable == "enable" else ""    # Save our enablesshd POST value to "yes" if we passed in a true value to enable
+        # Check that we do not want to retain our current value
+        if port.upper() != "DEFAULT":
+            sshPostData["sshport"] = port    # Save our ssh port value to our POST data
+        # Check that we do not want to retain our current auth value
+        if auth.upper() != "DEFAULT":
+            # Check if we are POSTing to an older pfSense version
+            if existingAdvAdm["adv_admin"]["secure_shell"]["legacy"]:
+                # Check that our auth method is expected
+                if auth in ["keyonly", "key", "pass", "password", "passwd"]:
+                    sshPostData["sshdkeyonly"] = "yes" if auth in ["keyonly", "key"] else ""    # For legacy pfSense versions, assign a "yes" or empty string value given a bool
+                else:
+                    sshConfigured = 20    # Assign exit code 20 (invalid legacy ssh auth method)
+            # If we are not on a legacy pfSense system
+            else:
+                # Check that our auth method is expected
+                if auth in ["keyonly", "key", "pass", "password", "passwd", "mfa", "both", "all"]:
+                    sshPostData["sshdkeyonly"] = "disabled" if auth in ["pass", "password", "passwd"] else sshPostData["sshdkeyonly"]    # Save our sshdkeyonly value if user wants password logins
+                    sshPostData["sshdkeyonly"] = "enabled" if auth in ["keyonly", "key"] else sshPostData["sshdkeyonly"]    # Save our sshdkeyonly value if user wants keyonly logins
+                    sshPostData["sshdkeyonly"] = "both" if auth in ["mfa", "both", "all"] else sshPostData["sshdkeyonly"]    # Save our sshdkeyonly value if user wants MFA SSH logins (key and password)
+                else:
+                    sshConfigured = 21    # Assign exit code 20 (invalid ssh auth method)
+        # Check that we do not want to retain our current auth value
+        if forwarding.upper() != "DEFAULT":
+            # This value only exists on non-legacy pfSense, check that we are not running legacy
+            if not existingAdvAdm["adv_admin"]["secure_shell"]["legacy"]:
+                sshPostData["sshdagentforwarding"] = "yes" if forwarding in ["enable", "enable-forwarding", "yes", "ef"] else ""    # Save our sshdagentforwarding value to our POST data
+        # Check that we did not encounter an error
+        if sshConfigured == 2:
+            # Use POST HTTP to save our new values
+            postSshConfig = http_request(url + "/system_advanced_admin.php", sshPostData, {}, "POST")    # POST our data
+            # Check that our values were updated, assign exit codes accordingly
+            newExistingAdvAdm = get_system_advanced_admin_post_data(get_system_advanced_admin(server, user, key)["adv_admin"])    # Get our dictionary of configured advanced options
+            # Loop through our POST variables and ensure they match
+            for d in ["enablesshd", "sshport", "sshdkeyonly", "sshdagentforwarding"]:
+                if newExistingAdvAdm[d] != sshPostData[d]:
+                    sshConfigured = 2    # Revert to exit code 2 (unexpected error
+                    break
+                else:
+                    sshConfigured = 0    # Assign our success exit code
+    # If we could not successfully pull our advanced admin configuration, return the exit code of that function
+    else:
+        sshConfigured = existingAdvAdm["ec"]
+    # Return our exit code
+    return sshConfigured
 # get_arp_table() pulls our pfSense's current ARP table
 def get_arp_table(server, user, key):
     arpTable = {"ec" : 2, "arp" : {}}    # Pre-define our function dictionary
@@ -2113,6 +2219,61 @@ def main():
                 else:
                     print(get_exit_message(advAdmData["ec"], pfsenseServer, pfsenseAction, advAdmFilter, ""))
                     sys.exit(advAdmData["ec"])
+            # Functions and processes for flag --setup-ssh
+            elif pfsenseAction == "--setup-ssh":
+                # Action variables
+                enableSsh = filter_input(thirdArg) if len(sys.argv) > 3 else input("Enable SSH [enable, disable, default]: ")    # Assign our enable option, prompt user for input if empty
+                enableSsh = "default" if enableSsh == "" else enableSsh    # Assume default if entry is blank
+                sshPort = filter_input(fourthArg) if len(sys.argv) > 4 else input("SSH Port [1-65535, default]: ")    # Assign our port option, prompt user for input if empty
+                sshPort = "default" if sshPort == "" else sshPort    # Assume default if entry is blank
+                sshAuth = filter_input(fifthArg) if len(sys.argv) > 5 else input("SSH Authentication method [passwd, key, both, default]: ")    # Assign our authentication option, prompt user for input if empty
+                sshAuth = "default" if sshAuth == "" else sshAuth    # Assume default if entry is blank
+                sshForward = filter_input(sixthArg) if len(sys.argv) > 6 else input("SSH-AGENT Forwarding [enable, disable, default]: ")    # Assign our ssh-agent forward option, prompt user for input if empty
+                sshForward = "default" if sshForward == "" else sshForward    # Assume default if entry is blank
+                user = eighthArg if seventhArg == "-u" and eighthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = tenthArg if ninthArg == "-p" and tenthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # Check that we are actually trying to change a variable aka default isn't set for each input
+                if all("DEFAULT" in x for x in [enableSsh.upper(),sshPort.upper(),sshAuth.upper(),sshForward.upper()]):
+                    # If we requested all default values, print error as nothing will be changed
+                    print(get_exit_message("no_change", pfsenseServer, pfsenseAction, "", ""))
+                    sys.exit(0)
+                # If all values were not DEFAULT
+                else:
+                    # Check our enable SSH value
+                    if enableSsh.lower() in ["enable", "disable", "default"]:
+                        # Check if we are trying to change the SSH port
+                        if sshPort.upper() != "DEFAULT":
+                            # Try to convert our port to an integer and verify it is in range
+                            try:
+                                sshPortInt = int(sshPort)    # Convert our SSH port to an integer for checks
+                            except ValueError:
+                                sshPortInt = 99999999     # If we could not convert our port to an integer, assign integer that is out of port range
+                            # Check if port is within range
+                            if 1 > sshPortInt or 65535 < sshPortInt:
+                                # If port is out of range print our exit message and exit on non-zero status
+                                print(get_exit_message("invalid_port", pfsenseServer, pfsenseAction, sshPort, ""))
+                                sys.exit(1)
+                        # Check that we have chosen a valid SSH auth type
+                        if sshAuth.lower() in ["keyonly", "key", "pass", "password", "passwd", "mfa", "both", "all", "default"]:
+                            # Check if we have a valid sshForward value
+                            if sshForward.lower() in ["enable", "disable", "enable-forwarding", "yes", "none", "default"]:
+                                ecSetupSsh = setup_ssh(pfsenseServer, user, key, enableSsh, sshPort, sshAuth, sshForward)    # Execute our configuration function
+                                # Print our exit message and exit on return code
+                                print(get_exit_message(ecSetupSsh, pfsenseServer, pfsenseAction, "", ""))
+                                sys.exit(ecSetupSsh)
+                            # If our sshForward value is invalid
+                            else:
+                                print(get_exit_message("invalid_forward", pfsenseServer, pfsenseAction, sshForward, ""))
+                                sys.exit(1)
+                        # If our auth type is invalid
+                        else:
+                            print(get_exit_message("invalid_auth", pfsenseServer, pfsenseAction, sshAuth, ""))
+                            sys.exit(1)
+                    # If our enableSSH value is invalid, print error
+                    else:
+                        print(get_exit_message("invalid_enable", pfsenseServer, pfsenseAction, enableSsh, ""))
+                        sys.exit(1)
+
             # Functions and process for flag --read-vlans
             elif pfsenseAction == "--read-vlans":
                 # Action Variables
