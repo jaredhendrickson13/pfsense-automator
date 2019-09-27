@@ -90,6 +90,16 @@ def get_exit_message(ec, server, command, data1, data2):
             "export_fail": "Failed to export advanced admin options as JSON"
         },
         # Error/success messages for --set-ssh
+        "--setup-console": {
+            0: "Successfully setup console options on `" + server + "`",
+            2: "Error: Unexpected error configuring console options",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_option" : "Error: Unknown console option value `" + data1 + "`",
+        },
+        # Error/success messages for --set-ssh
         "--setup-ssh": {
             0: "Successfully setup SSH on `" + server + "`",
             2: "Error: Unexpected error configuring SSH",
@@ -99,11 +109,7 @@ def get_exit_message(ec, server, command, data1, data2):
             15: globalPermissionErrMsg,
             20: "Error: Unknown legacy SSH authentication option `" + data1 + "`",
             21: "Error: Unknown SSH authentication option `" + data1 + "`",
-            "invalid_enable" : "Error: Unknown enable value `" + data1 + "`",
-            "invalid_port" : "Error: SSH port `" + data1 + "` out of range. Expected 1-65535",
-            "invalid_auth" : "Error: Unknown SSH authentication method `" + data1 + "`",
-            "invalid_forward" : "Error: Unknown ssh-agent forwarding value `" + data1 + "`",
-            "no_change" : "INFO: No differing values were requested"
+            "invalid_enable": "Error: Unknown enable value `" + data1 + "`",
         },
         # Error/success messages for --read-vlans flag
         "--read-arp": {
@@ -466,7 +472,6 @@ def check_dns_rebind_error(url):
 
 # check_auth() runs a basic authentication check. If the authentication is successful a true value is returned
 def check_auth(server, user, key):
-    print(wcProtocol + str(wcProtocolPort))
     # Local Variables
     authSuccess = False    # Set the default return value to false
     url = wcProtocol + "://" + server    # Assign our base URL
@@ -527,7 +532,7 @@ def get_system_advanced_admin(server, user, key):
                 advAdm["adv_admin"]["webconfigurator"]["loginautocomplete"] = True if "loginautocomplete" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"loginautocomplete\"")[1].split("</label>")[0] else False    # Check if login auto completeion is enabled
                 advAdm["adv_admin"]["webconfigurator"]["webgui-login-messages"] = True if "webgui-login-messages" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"webgui-login-messages\"")[1].split("</label>")[0] else False    # Check if login logging is enabled
                 advAdm["adv_admin"]["webconfigurator"]["noantilockout"] = True if "noantilockout" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"noantilockout\"")[1].split("</label>")[0] else False    # Check if anti-lockout rule is disabled
-                advAdm["adv_admin"]["webconfigurator"]["nodnsrebindcheck"] = True if "nodnsrebindcheck" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"noantilockout\"")[1].split("</label>")[0] else False    # Check if DNS rebind checking is enabled
+                advAdm["adv_admin"]["webconfigurator"]["nodnsrebindcheck"] = True if "nodnsrebindcheck" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"nodnsrebindcheck\"")[1].split("</label>")[0] else False    # Check if DNS rebind checking is enabled
                 advAdm["adv_admin"]["webconfigurator"]["nohttpreferercheck"] = True if "nohttpreferercheck" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"nohttpreferercheck\"")[1].split("</label>")[0] else False    # Check if HTTP-REFERRER checks are enabled
                 advAdm["adv_admin"]["webconfigurator"]["pagenamefirst"] = True if "pagenamefirst" in wcAdmTableBody and "checked=\"checked\"" in wcAdmTableBody.split("id=\"pagenamefirst\"")[1].split("</label>")[0] else False    # Check if page name first is checked (adds hostname to browser tab first)
                 advAdm["adv_admin"]["webconfigurator"]["althostnames"] = wcAdmTableBody.split("id=\"althostnames\"")[1].split("value=\"")[1].split("\"")[0] if "althostnames" in wcAdmTableBody else ""    # Save our alternate hostname values to a string
@@ -754,6 +759,35 @@ def setup_ssh(server, user, key, enable, port, auth, forwarding):
         sshConfigured = existingAdvAdm["ec"]
     # Return our exit code
     return sshConfigured
+
+# setup_console_options() configures password protection of the console menu
+def setup_console(server, user, key, consolePass):
+    # Local Variables
+    consoleConfigured = 2    # Pre-define our exit code as 2
+    url = wcProtocol + "://" + server    # Assign our base URL
+    existingAdvAdm = get_system_advanced_admin(server, user, key)    # Get our dictionary of configured advanced options
+    # Check if we got our advanced admin dictionary successfully
+    if existingAdvAdm["ec"] == 0:
+        # FORMAT OUR POST DATA
+        consolePostData = get_system_advanced_admin_post_data(existingAdvAdm["adv_admin"])    # Convert our advanced admin data into a POST dictionary
+        # Update our POST data
+        consolePostData["__csrf_magic"] = get_csrf_token(url + "/system_advanced_admin.php", "GET")
+        consolePostData["disableconsolemenu"] = "yes" if consolePass.upper() in ["ENABLE", "YES"] else ""    # If user wants to password protect console, assign value of yes
+        if consoleConfigured == 2:
+            # Use POST HTTP to save our new values
+            postConsoleConfig = http_request(url + "/system_advanced_admin.php", consolePostData, {}, "POST")    # POST our data
+            # Check that our values were updated, assign exit codes accordingly
+            newExistingAdvAdm = get_system_advanced_admin_post_data(get_system_advanced_admin(server, user, key)["adv_admin"])    # Get our dictionary of configured advanced options
+            if newExistingAdvAdm["disableconsolemenu"] != consolePostData["disableconsolemenu"]:
+                consoleConfigured = 2    # Revert to exit code 2 (unexpected error)
+            else:
+                consoleConfigured = 0    # Assign our success exit code
+    # If we could not successfully pull our advanced admin configuration, return the exit code of that function
+    else:
+        consoleConfigured = existingAdvAdm["ec"]
+    # Return our exit code
+    return consoleConfigured
+
 # get_arp_table() pulls our pfSense's current ARP table
 def get_arp_table(server, user, key):
     arpTable = {"ec" : 2, "arp" : {}}    # Pre-define our function dictionary
@@ -2287,6 +2321,22 @@ def main():
                     else:
                         print(get_exit_message("invalid_enable", pfsenseServer, pfsenseAction, enableSsh, ""))
                         sys.exit(1)
+
+            # Functions and processes for flag --setup-console
+            elif pfsenseAction == "--setup-console":
+                # Action variables
+                consolePass = filter_input(thirdArg) if len(sys.argv) > 3 else input("Console password protection [enable,disable]: ")    # Capture our user input or prompt user for input if missing
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # Check our input
+                if consolePass.upper() in ["ENABLE","DISABLE"]:
+                    ecSetupConsole = setup_console(pfsenseServer, user, key, consolePass)    # run our function and save return code
+                    print(get_exit_message(ecSetupConsole, pfsenseServer, pfsenseAction, "", ""))    # Print our exit message
+                    sys.exit(ecSetupConsole)    # Exit on our return code
+                # If our inupt is invalid
+                else:
+                    print(get_exit_message("invalid_option", pfsenseServer, pfsenseAction, consolePass, ""))    # Print our error message
+                    sys.exit(1)    # Exit on non-zero exit code
 
             # Functions and process for flag --read-vlans
             elif pfsenseAction == "--read-vlans":
