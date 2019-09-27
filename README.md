@@ -66,6 +66,13 @@ Commands
                 - `disable` - Disables ssh-agent forwarding
                 - `default` - Retains existing value (empty input in interactive mode assumes `default`)
 
+- `--setup-console` - Configures console options found in system_advanced_admin.php
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-console <console_pass_protect>`
+    - **Arguments**:
+      - `<console_pass_protect>` - Enable or disables console password protection
+        - `enable` - Enables console password protection
+        - `disable` - Disables console password protection
+
 - `--read-arp` : Reads the ARP table
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-arp <argument>`
     - **Arguments**:
