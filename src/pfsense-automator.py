@@ -58,7 +58,7 @@ def get_exit_message(ec, server, command, data1, data2):
         # Generic error message that don't occur during commands
         "generic" : {
             "invalid_arg" : "Error: Invalid argument. Unknown action `" + data1 + "`",
-            "connect_err" : "Error: Failed connection to " + server + ":" + str(wcProtocolPort),
+            "connect_err" : "Error: Failed connection to " + server + ":" + str(wcProtocolPort) + " via " + wcProtocol,
             "invalid_host" : "Error: Invalid hostname. Expected syntax: `pfsense-automator <HOSTNAME or IP> <COMMAND> <ARGS>`",
             "timeout" : "Error: connection timeout",
             "version" : "pfsense-automator " + softwareVersion
@@ -373,8 +373,9 @@ def validate_platform(url):
     platformConfidence = 0    # Assign a integer confidence value
     # List of platform dependent key words to check for
     checkItems = [
-        "pfSense", "pfsense.org", "Login to pfSense", "pfsense-logo",
-        "netgate.com", "__csrf_magic", "ESF", "Netgate", "Rubicon Communications, LLC"
+        "pfSense", "pfsense.org", "Login to pfSense", "pfsense-logo", "pfSenseHelpers",
+        "netgate.com", "__csrf_magic", "ESF", "Netgate", "Rubicon Communications, LLC",
+        "Electric Sheep Fencing LLC", "https://pfsense.org/license"
     ]
     # Loop through our list and add up a confidence score
     for ci in checkItems:
@@ -510,7 +511,7 @@ def get_system_advanced_admin(server, user, key):
     url = wcProtocol + "://" + server    # Assign our base URL
     # Submit our intitial request and check for errors
     advAdm["ec"] = 10 if check_dns_rebind_error(url) else advAdm["ec"]    # Return exit code 10 if dns rebind error found
-    advAdm["ec"] = 6 if not validate_platform(url) else advAdm["ec"]    # Check that our URL appears to be pfSense
+    advAdm["ec"] = 6 if not validate_platform(url) and advAdm["ec"] == 2 else advAdm["ec"]    # Check that our URL appears to be pfSense
     # Check if we have not encountered an error that would prevent us from authenticating
     if advAdm["ec"] == 2:
         advAdm["ec"] = 3 if not check_auth(server, user, key) else advAdm["ec"]    # Return exit code 3 if we could not sign in
@@ -777,11 +778,17 @@ def setup_console(server, user, key, consolePass):
             # Use POST HTTP to save our new values
             postConsoleConfig = http_request(url + "/system_advanced_admin.php", consolePostData, {}, "POST")    # POST our data
             # Check that our values were updated, assign exit codes accordingly
-            newExistingAdvAdm = get_system_advanced_admin_post_data(get_system_advanced_admin(server, user, key)["adv_admin"])    # Get our dictionary of configured advanced options
-            if newExistingAdvAdm["disableconsolemenu"] != consolePostData["disableconsolemenu"]:
-                consoleConfigured = 2    # Revert to exit code 2 (unexpected error)
+            updateAdvAdmData = get_system_advanced_admin(server, user, key)    # Update our raw configuration dictionary
+            newExistingAdvAdm = get_system_advanced_admin_post_data(updateAdvAdmData["adv_admin"])    # Get our dictionary of configured advanced options
+            # Check that we successfully updated our dictionary
+            if updateAdvAdmData == 0:
+                if newExistingAdvAdm["disableconsolemenu"] != consolePostData["disableconsolemenu"]:
+                    consoleConfigured = 2    # Revert to exit code 2 (unexpected error)
+                else:
+                    consoleConfigured = 0    # Assign our success exit code
+            # If we could not update our configuration dictionary
             else:
-                consoleConfigured = 0    # Assign our success exit code
+                consoleConfigured = updateAdvAdmData["ec"]
     # If we could not successfully pull our advanced admin configuration, return the exit code of that function
     else:
         consoleConfigured = existingAdvAdm["ec"]
@@ -2160,7 +2167,7 @@ def main():
                             # Check if JSON path exists
                             if os.path.exists(jsonPath):
                                 # Open an export file and save our data
-                                jsonExported = export_json(tunableFilter["arp"], jsonPath, jsonName)
+                                jsonExported = export_json(tunables["tunables"], jsonPath, jsonName)
                                 # Check if the file now exists
                                 if jsonExported:
                                     print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
