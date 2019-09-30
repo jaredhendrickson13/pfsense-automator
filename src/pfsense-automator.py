@@ -17,6 +17,7 @@ import signal
 import requests
 import urllib3
 import json
+import time
 
 # Variables
 softwareVersion = "v0.0.3 " + platform.system() + "/" + platform.machine()    # Define our current version of this software
@@ -25,13 +26,19 @@ secondArg = sys.argv[2] if len(sys.argv) > 2 else ""    # Declare 'secondArg' to
 thirdArg = sys.argv[3] if len(sys.argv) > 3 else None    # Declare 'thirdArg' to populate the third argument passed in to the script
 fourthArg = sys.argv[4] if len(sys.argv) > 4 else None    # Declare 'fourthArg' to populate the fourth argument passed in to the script
 fifthArg = sys.argv[5] if len(sys.argv) > 5 else None    # Declare 'fifthArg' to populate the fifth argument passed in to the script
-sixthArg = sys.argv[6] if len(sys.argv) > 6 else None    # Declare 'sixthArg' to populate the first argument passed in to the script
-seventhArg = sys.argv[7] if len(sys.argv) > 7 else None    # Declare 'seventhArg' to populate the second argument passed in to the script
-eighthArg = sys.argv[8] if len(sys.argv) > 8 else None    # Declare 'eighthArg' to populate the third argument passed in to the script
-ninthArg = sys.argv[9] if len(sys.argv) > 9 else None    # Declare 'ninthArg' to populate the fourth argument passed in to the script
-tenthArg = sys.argv[10] if len(sys.argv) > 10 else None    # Declare 'tenthArg' to populate the fifth argument passed in to the script
+sixthArg = sys.argv[6] if len(sys.argv) > 6 else None    # Declare 'sixthArg' to populate the sixth argument passed in to the script
+seventhArg = sys.argv[7] if len(sys.argv) > 7 else None    # Declare 'seventhArg' to populate the seventh argument passed in to the script
+eighthArg = sys.argv[8] if len(sys.argv) > 8 else None    # Declare 'eighthArg' to populate the eigth argument passed in to the script
+ninthArg = sys.argv[9] if len(sys.argv) > 9 else None    # Declare 'ninthArg' to populate the ninth argument passed in to the script
+tenthArg = sys.argv[10] if len(sys.argv) > 10 else None    # Declare 'tenthArg' to populate the tenth argument passed in to the script
+eleventhArg = sys.argv[11] if len(sys.argv) > 11 else None    # Declare 'eleventhArg' to populate the eleventh argument passed in to the script
+twelfthArg = sys.argv[12] if len(sys.argv) > 12 else None    # Declare 'twelfthArg' to populate the twelth argument passed in to the script
+thirteenthArg = sys.argv[13] if len(sys.argv) > 13 else None    # Declare 'thirteenthArg' to populate the thirteenth argument passed in to the script
+fourteenthArg = sys.argv[14] if len(sys.argv) > 14 else None    # Declare 'fourteenthArg' to populate the fourteenth argument passed in to the script
+fifteenthArg = sys.argv[15] if len(sys.argv) > 15 else None    # Declare 'fifteenthArg' to populate the fifteenth argument passed in to the script
+sixteenthArg = sys.argv[16] if len(sys.argv) > 16 else None    # Declare 'sixteenthArg' to populate the sixteenth argument passed in to the script
 localUser = getpass.getuser()    # Save our current user's username to a string
-localHostname = socket.gethostname()    # Gets the hostname of the system running pfsense-controller
+localHostname = socket.gethostname()    # Gets the hostname of the system running pfsense-automator
 currentDate = datetime.datetime.now().strftime("%Y%m%d%H%M%S")    # Get the current date in a file supported format
 wcProtocol = "https"    # Assigns whether the script will use HTTP or HTTPS connections
 wcProtocolPort = 443 if wcProtocol == 'https' else 80    # If wcProtocol is set to https, assign a integer value to coincide
@@ -60,7 +67,8 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_arg" : "Error: Invalid argument. Unknown action `" + data1 + "`",
             "connect_err" : "Error: Failed connection to " + server + ":" + str(wcProtocolPort) + " via " + wcProtocol,
             "invalid_host" : "Error: Invalid hostname. Expected syntax: `pfsense-automator <HOSTNAME or IP> <COMMAND> <ARGS>`",
-            "timeout" : "Error: connection timeout",
+            "timeout" : "Error: Connection timeout",
+            "connection" : "Error: Connection dropped by remote host",
             "version" : "pfsense-automator " + softwareVersion
         },
         # Error/success messages for --add-vlan flag
@@ -89,7 +97,37 @@ def get_exit_message(ec, server, command, data1, data2):
             "export_success": "Successfully exported advanced admin options to " + data1,
             "export_fail": "Failed to export advanced admin options as JSON"
         },
-        # Error/success messages for --set-ssh
+        # Error/success messages for --setup-wc
+        "--setup-wc": {
+            0: "Successfully setup webConfigurator options on `" + server + "`",
+            2: "Error: Unexpected error configuring webConfigurator options",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_proc": "Error: Invalid max processes value `" + data1 + "`. Expected value between 1-1024",
+            "invalid_redirect": "Error: Unknown HTTP redirect option `" + data1 + "`",
+            "invalid_hsts": "Error: Unknown HSTS option `" + data1 + "`",
+            "invalid_autocomplete": "Error: Unknown login auto-complete option `" + data1 + "`",
+            "invalid_loginmsg": "Error: Unknown authentication logging option `" + data1 + "`",
+            "invalid_lockout": "Error: Unknown webConfigurator anti-lockout option `" + data1 + "`",
+            "invalid_dnsrebind": "Error: Unknown DNS rebind checking option `" + data1 + "`",
+            "invalid_httpreferer": "Error: Unknown HTTP_REFERER checking option `" + data1 + "`",
+            "invalid_tabtext": "Error: Unknown display hostname in tab option `" + data1 + "`",
+        },
+        # Error/success messages for --setup-wc
+        "--set-wc-port": {
+            0: "Successfully setup webConfigurator at " + wcProtocol + "://" + server + ":" + data2,
+            2: "Error: Unexpected error configuring webConfigurator port. You may be sending HTTP requests to an HTTPS port",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            8: "Error: Unexpected error binding to TCP/" + data2,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_protocol": "Error: Unknown protocol `" + data1 + "`. Expected http or https",
+            "invalid_port": "Error: Invalid port `" + data2 + "`. Expected value between 1-65535",
+        },
+        # Error/success messages for --setup-console
         "--setup-console": {
             0: "Successfully setup console options on `" + server + "`",
             2: "Error: Unexpected error configuring console options",
@@ -99,7 +137,7 @@ def get_exit_message(ec, server, command, data1, data2):
             15: globalPermissionErrMsg,
             "invalid_option" : "Error: Unknown console option value `" + data1 + "`",
         },
-        # Error/success messages for --set-ssh
+        # Error/success messages for --setup-ssh
         "--setup-ssh": {
             0: "Successfully setup SSH on `" + server + "`",
             2: "Error: Unexpected error configuring SSH",
@@ -295,11 +333,17 @@ def http_request(url, data, headers, method):
             except requests.exceptions.ReadTimeout:
                 print(get_exit_message("timeout", "", "generic", "", ""))
                 sys.exit(1)
+            except requests.exceptions.ConnectionError:
+                print(get_exit_message("connection", "", "generic", "", ""))
+                sys.exit(1)
         # Process to run if a POST request was requested
         elif method.upper() == "POST":
             # Try to open the connection and gather data
             try:
                 req = req_session.post(url, data=data, headers=headers, verify=False, timeout=45)
+            except requests.exceptions.ConnectionError:
+                print(get_exit_message("connection", "", "generic", "", ""))
+                sys.exit(1)
             except requests.exceptions.ReadTimeout:
                 print(get_exit_message("timeout", "", "generic", "", ""))
                 sys.exit(1)
@@ -475,7 +519,7 @@ def check_dns_rebind_error(url):
 def check_auth(server, user, key):
     # Local Variables
     authSuccess = False    # Set the default return value to false
-    url = wcProtocol + "://" + server    # Assign our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)   # Assign our base URL
     authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define a dictionary for our login POST data
     preAuthCheck = http_request(url + "/index.php", {}, {}, "GET")
     # Check that we're not already signed
@@ -494,9 +538,126 @@ def get_csrf_token(url, type):
         csrfTokenLength = 55  # Set the expected token length of the csrf token
         csrfResponse = http_request(url, None, {}, type)
         # Parse CSRF token and conditionalize return value
-        csrfParsed = "sid:" + csrfResponse['text'].split("sid:")[1].split(";")[0].replace(" ", "").replace("\n", "").replace("\"", "")
-        csrfToken = csrfParsed if len(csrfParsed) is csrfTokenLength else ""    # Assign the csrfToken to the parsed value if the expected string length is found
+        if "sid:" in csrfResponse['text']:
+            csrfParsed = "sid:" + csrfResponse['text'].split("sid:")[1].split(";")[0].replace(" ", "").replace("\n", "").replace("\"", "")
+            csrfToken = csrfParsed if len(csrfParsed) is csrfTokenLength else ""    # Assign the csrfToken to the parsed value if the expected string length is found
+        # If we could not find a CSRF token
+        else:
+            csrfToken = ""    # Assign blank CSRF token as none was found
         return csrfToken    # Return our token
+
+# get_general_setup() pulls information from /system.php (this excludes webConfigurator UI preferences)
+def get_general_setup(server, user, key):
+    # Local variables
+    general = {
+        "ec" : 2,
+        "general" : {
+            "system" : {},
+            "dns" : {"servers":{}},
+            "localization" : {},
+            "webconfigurator" : {}
+        },
+    }
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    # Submit our intitial request and check for errors
+    general["ec"] = 10 if check_dns_rebind_error(url) else general["ec"]    # Return exit code 10 if dns rebind error found
+    general["ec"] = 6 if not validate_platform(url) else general["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if general["ec"] == 2:
+        general["ec"] = 3 if not check_auth(server, user, key) else general["ec"]    # Return exit code 3 if we could not sign in
+    # Check if we encountered any errors before staring
+    if general["ec"] == 2:
+        # Check that we had permissions for this page
+        getGeneralData = http_request(url + "/system.php", {}, {}, "GET")    # Pull our admin data using GET HTTP
+        if check_permissions(getGeneralData):
+            # Check that we have a SYSTEM table
+            if "<h2 class=\"panel-title\">System</h2>" in getGeneralData["text"]:
+                # Split our response to get our System table configuration
+                systemTable = getGeneralData["text"].split("<h2 class=\"panel-title\">System</h2>")[1].split("<span class=\"help-block\">Do not use '.local'")[0]
+                general["general"]["system"]["host"] = systemTable.split("name=\"hostname\"")[1].split("value=\"")[1].split("\"")[0] if "name=\"hostname\"" in systemTable else ""    # Get our hostname value
+                general["general"]["system"]["domain"] = systemTable.split("name=\"domain\"")[1].split("value=\"")[1].split("\"")[0] if "name=\"domain\"" in systemTable else ""    # Get our domain value
+            # Check that we have a DNS table
+            if "<h2 class=\"panel-title\">DNS Server Settings</h2>" in getGeneralData["text"]:
+                dnsTable = getGeneralData["text"].split("<h2 class=\"panel-title\">DNS Server Settings</h2>")[1].split("<span class=\"help-block\">By default localhost (127.0.0.1)")[0]
+                # Check if we have a DNS WAN override option
+                if "<input name=\"dnsallowoverride\"" in dnsTable:
+                    general["general"]["dns"]["dnsallowoverride"] = True if "checked" in dnsTable.split("<input name=\"dnsallowoverride\"")[1].split("</label>")[0] else False
+                # If not, assume default
+                else:
+                    general["general"]["dns"]["dnsallowoverride"] = False
+                 # Check if we have a dns localhost option
+                if "<input name=\"dnslocalhost\"" in dnsTable:
+                    general["general"]["dns"]["dnslocalhost"] = True if "checked" in dnsTable.split("<input name=\"dnslocalhost\"")[1].split("</label>")[0] else False
+                # If not, assume default
+                else:
+                    general["general"]["dns"]["dnslocalhost"] = False
+                # Loop through our configured DNS servers and save there values to our dictionary
+                counter = 0    # Assign a counter
+                while True:
+                    # Check that we have a DNS server configured for this counter value
+                    if "name=\"dns" + str(counter) in dnsTable:
+                        general["general"]["dns"]["servers"][counter] = {}    # Create a nested dict for our current counter
+                        general["general"]["dns"]["servers"][counter]["id"] = str(counter)    # Assign our counter value to the dict
+                        general["general"]["dns"]["servers"][counter]["ip"] = dnsTable.split("name=\"dns" + str(counter) + "\"")[1].split("value=\"")[1].split("\"")[0]
+                        general["general"]["dns"]["servers"][counter]["hostname"] = dnsTable.split("name=\"dnshost" + str(counter) + "\"")[1].split("value=\"")[1].split("\"")[0] if "name=\"dnshost" + str(counter) + "\"" in dnsTable else ""    # Assign our DNS hostname value if present
+                        # Check that we have a gateway selection option
+                        if "name=\"dnsgw" + str(counter) + "\"" in dnsTable:
+                            # Split our output to a list of gateway options, loop through this list and find the selected value
+                            dnsGwTable = dnsTable.split("name=\"dnsgw" + str(counter) + "\"")[1].split("</select>")[0].split("<option value=\"")
+                            for gw in dnsGwTable:
+                                # Check for selected> keyword
+                                if "selected>" in gw:
+                                    # Assign our gateway value to our dictionary and break the loop
+                                    general["general"]["dns"]["servers"][counter]["gateway"] = gw.split("\"")[0]
+                                    break
+                                # Assign empty string if no gateway was selected
+                                else:
+                                    general["general"]["dns"]["servers"][counter]["gateway"] = ""
+                        # If we do not have a DNS gateway option
+                        else:
+                            general["general"]["dns"]["servers"][counter]["gateway"] = ""    # Assign default
+                    # Check if our next value exists before exitting the script
+                    elif "name=\"dns" + str(counter + 1) in dnsTable:
+                        pass    # Do nothing, this will allow us to increase the counter even though this iteration did nothing
+                    # If we have made it through all our DNS servers and the next value does not exist
+                    else:
+                        break   # Break the loop
+                    # Increase our counter
+                    counter = counter + 1
+            # Check that we have a LOCALIZATION table
+            if "<h2 class=\"panel-title\">Localization</h2>" in getGeneralData["text"]:
+                localTable = getGeneralData["text"].split("<h2 class=\"panel-title\">Localization</h2>")[1].split("<span class=\"help-block\">Choose a language")[0]
+                # Check if we have a timeserver configuartion
+                if "name=\"timeservers\"" in localTable:
+                    general["general"]["localization"]["timeservers"] = localTable.split("name=\"timeservers\"")[1].split("value=\"")[1].split("\"")[0]    # save our timeservers
+                # Check that we have a timezone configuration
+                if "name=\"timezone\"" in localTable:
+                    # Loop through our timezones and find our currently selected timezone
+                    timeTable = localTable.split("name=\"timezone\"")[1].split("</select>")[0].split("<option value=\"")
+                    for tz in timeTable:
+                        # Check if this value is selected
+                        if "selected>" in tz:
+                            general["general"]["localization"]["timezone"] = tz.split("\"")[0]    # Assign our timezone
+                            break    # Break the loop as we have found our value
+                        else:
+                            general["general"]["localization"]["timezone"] = ""    # Assign default timezone
+                # Check that we have a language configuration
+                if "name=\"language\"" in localTable:
+                    # Loop through our languages and find our currently selected language
+                    langTable = localTable.split("name=\"language\"")[1].split("</select>")[0].split("<option value=\"")
+                    for lg in langTable:
+                        # Check if this value is selected
+                        if "selected>" in lg:
+                            general["general"]["localization"]["language"] = lg.split("\"")[0]    # Assign our language
+                            break    # Break the loop as we have found our value
+                        else:
+                            general["general"]["localization"]["timezone"] = ""    # Assign default language
+                general["ec"] = 0    # Return our success exit code
+        # If we did not have permissions
+        else:
+            general["ec"] = 15    # Assign exit code 15 (permission denied)
+    # Return our dictionary
+    return general
 
 # get_system_advanced_admin() pulls our current configuration from System > Advanced > Admin Access and saves it to a dictionary
 def get_system_advanced_admin(server, user, key):
@@ -508,10 +669,10 @@ def get_system_advanced_admin(server, user, key):
         "serial_communcations" : {},
         "console_options" : {}
     }}
-    url = wcProtocol + "://" + server    # Assign our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
     # Submit our intitial request and check for errors
     advAdm["ec"] = 10 if check_dns_rebind_error(url) else advAdm["ec"]    # Return exit code 10 if dns rebind error found
-    advAdm["ec"] = 6 if not validate_platform(url) and advAdm["ec"] == 2 else advAdm["ec"]    # Check that our URL appears to be pfSense
+    advAdm["ec"] = 6 if not validate_platform(url) else advAdm["ec"]    # Check that our URL appears to be pfSense
     # Check if we have not encountered an error that would prevent us from authenticating
     if advAdm["ec"] == 2:
         advAdm["ec"] = 3 if not check_auth(server, user, key) else advAdm["ec"]    # Return exit code 3 if we could not sign in
@@ -701,11 +862,124 @@ def get_system_advanced_admin_post_data(dictionary):
     # Return our POST data dictionary
     return postData
 
+# setup_wc() configures webConfigurator settings found in /system_advanced_admin.php
+def setup_wc(server, user, key, maxProc, redirect, hsts, autoComplete, loginMsg, lockout, dnsRebind, altHost, httpRef, tabText):
+    # Local Variables
+    wcConfigured = 2    # Pre-define our exit code as 2
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    existingAdvAdm = get_system_advanced_admin(server, user, key)    # Get our dictionary of configured advanced options
+    wcPostKeys = ["max_procs", "webgui-redirect", "webgui-hsts",
+                  "ocsp-staple", "loginautocomplete", "webgui-login-messages", "noantilockout",
+                  "nodnsrebindcheck", "althostnames", "nohttpreferercheck", "pagenamefirst"]
+    # Check if we got our advanced admin dictionary successfully
+    if existingAdvAdm["ec"] == 0:
+        # FORMAT OUR POST DATA
+        wcPostData = get_system_advanced_admin_post_data(existingAdvAdm["adv_admin"])    # Convert our advanced admin data into a POST dictionary
+        # Update our CSRF, certref, and take our POST request and save a new GET request that should show our new configuration
+        wcPostData["__csrf_magic"] = get_csrf_token(url + "/system_advanced_admin.php", "GET")
+        # Check that we do not want to retain our current current value
+        if maxProc.upper() != "DEFAULT":
+            wcPostData["max_procs"] = maxProc     # Assign our max processes value
+        # Check that we do not want to retain our current current value
+        if redirect.upper() != "DEFAULT":
+            wcPostData["webgui-redirect"] = "yes" if redirect in ["disable","no-redirect"] else ""     # Assign our redirect value
+        # Check that we do not want to retain our current current value
+        if hsts.upper() != "DEFAULT":
+            wcPostData["webgui-hsts"] = "yes" if hsts in ["disable","no-hsts"] else ""     # Assign our hsts value
+        # Check that we do not want to retain our current current value
+        if autoComplete.upper() != "DEFAULT":
+            wcPostData["loginautocomplete"] = "yes" if autoComplete in ["enable", "autocomplete"] else ""     # Assign our autoComplete value
+        # Check that we do not want to retain our current current value
+        if loginMsg.upper() != "DEFAULT":
+            wcPostData["webgui-login-messages"] = "yes" if loginMsg in ["disable", "no-loginmsg"] else ""     # Assign our webgui-login-messages value
+        # Check that we do not want to retain our current current value
+        if lockout.upper() != "DEFAULT":
+            wcPostData["noantilockout"] = "yes" if lockout in ["disable", "no-antilockout"] else ""     # Assign our noantilockout value
+        # Check that we do not want to retain our current current value
+        if dnsRebind.upper() != "DEFAULT":
+            wcPostData["nodnsrebindcheck"] = "yes" if dnsRebind in ["disable", "no-dnsrebind"] else ""     # Assign our nodnsrebindcheck value
+        # Check that we do not want to retain our current current value
+        if altHost.upper() != "DEFAULT":
+            wcPostData["althostnames"] = altHost     # Assign our althostnames value
+        # Check that we do not want to retain our current current value
+        if httpRef.upper() != "DEFAULT":
+            wcPostData["nohttpreferercheck"] = "yes" if httpRef in ["disable", "no-httpreferer"] else ""     # Assign our nohttpreferercheck value
+        # Check that we do not want to retain our current current value
+        if tabText.upper() != "DEFAULT":
+            wcPostData["pagenamefirst"] = "yes" if tabText in ["enable", "display-tabtext"] else ""     # Assign our pagenamefirst value
+        # Check that we did not encounter an error
+        if wcConfigured == 2:
+            # Use POST HTTP to save our new values
+            postWcConfig = http_request(url + "/system_advanced_admin.php", wcPostData, {'Cache-Control': 'no-cache'}, "POST")    # POST our data
+            # Give pfSense time to restart webconfigurator and read our updated configuration to ensure changes were applied
+            time.sleep(2)
+            updateAdvAdmData = get_system_advanced_admin(server, user, key)    # Update our raw configuration dictionary
+            newExistingAdvAdm = get_system_advanced_admin_post_data(updateAdvAdmData["adv_admin"])    # Get our dictionary of configured advanced options
+            # Check that we successfully updated our dictionary
+            if updateAdvAdmData["ec"] == 0:
+                # Loop through our POST variables and ensure they match
+                for d in wcPostKeys:
+                    if newExistingAdvAdm[d] != wcPostData[d]:
+                        print(d)
+                        wcConfigured = 2    # Revert to exit code 2 (unexpected error
+                        break
+                    else:
+                        wcConfigured = 0    # Assign our success exit code
+    # If we could not successfully pull our advanced admin configuration, return the exit code of that function
+    else:
+        wcConfigured = existingAdvAdm["ec"]
+        # Return our exit code
+    return wcConfigured
+
+# set_wc_port() configures webConfigurator port and protocol settings found in /system_advanced_admin.php
+def set_wc_port(server, user, key, protocol, port):
+    # Local Variables
+    global wcProtocol    # Allow our wcProtocol variable to be updated globally
+    global wcProtocolPort    # Allow our wcProtocolPort variable to be updated globally
+    wcPortConfigured = 2    # Pre-define our exit code as 2
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    existingAdvAdm = get_system_advanced_admin(server, user, key)    # Get our dictionary of configured advanced options
+    # Check if we got our advanced admin dictionary successfully
+    if existingAdvAdm["ec"] == 0:
+        # FORMAT OUR POST DATA
+        wcPostData = get_system_advanced_admin_post_data(existingAdvAdm["adv_admin"])    # Convert our advanced admin data into a POST dictionary
+        # Update our CSRF, certref, and take our POST request and save a new GET request that should show our new configuration
+        wcPostData["__csrf_magic"] = get_csrf_token(url + "/system_advanced_admin.php", "GET")
+        # Check that we do not want to retain our current current value
+        if protocol.upper() != "DEFAULT" and protocol.upper() != "":
+            # Assign our new protocol value if the value is valid
+            wcPostData["webguiproto"] = protocol if protocol in ["http","https"] else wcPostData["webguiproto"]
+            wcProtocol = protocol    # Update our global wcProtocol used by the script
+        # Check that we do not want to retain our current current value
+        if port.upper() != "DEFAULT" and port.upper() != "":
+            # Assign our new port value
+            wcPostData["webguiport"] = port
+            wcProtocolPort = port    # Update our global wcProtocolPort used by the script
+        # POST our request
+        wcPortPost = http_request(url + "/system_advanced_admin.php", wcPostData, {}, "POST")
+        time.sleep(2)    # Give our webConfigurator a couple seconds to restart
+        # Loop for up to 10 second and check that our port opens
+        counter = 0    # Define a loop counter
+        while True:
+            # Break the loop if we have waited over 10 seconds
+            if counter > 10:
+                break
+            # Check if our port is open, break the loop if so
+            if check_auth(server, user, key):
+                wcPortConfigured = 0    # Return our success exit code
+                break
+            else:
+                wcPortConfigured = 8   # Return exit code 8 (port did not bind)
+            time.sleep(1)    # Wait one second before running again
+            counter = counter + 1    # Increase our counter
+    # Return our value
+    return wcPortConfigured
+
 # setup_ssh() configures sshd settings found in /system_advanced_admin.php
 def setup_ssh(server, user, key, enable, port, auth, forwarding):
     # Local Variables
     sshConfigured = 2    # Pre-define our exit code as 2
-    url = wcProtocol + "://" + server    # Assign our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
     existingAdvAdm = get_system_advanced_admin(server, user, key)    # Get our dictionary of configured advanced options
     # Check if we got our advanced admin dictionary successfully
     if existingAdvAdm["ec"] == 0:
@@ -765,7 +1039,7 @@ def setup_ssh(server, user, key, enable, port, auth, forwarding):
 def setup_console(server, user, key, consolePass):
     # Local Variables
     consoleConfigured = 2    # Pre-define our exit code as 2
-    url = wcProtocol + "://" + server    # Assign our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
     existingAdvAdm = get_system_advanced_admin(server, user, key)    # Get our dictionary of configured advanced options
     # Check if we got our advanced admin dictionary successfully
     if existingAdvAdm["ec"] == 0:
@@ -798,7 +1072,7 @@ def setup_console(server, user, key, consolePass):
 # get_arp_table() pulls our pfSense's current ARP table
 def get_arp_table(server, user, key):
     arpTable = {"ec" : 2, "arp" : {}}    # Pre-define our function dictionary
-    url = wcProtocol + "://" + server    # Assign our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
     # Submit our intitial request and check for errors
     arpTable["ec"] = 10 if check_dns_rebind_error(url) else arpTable["ec"]    # Return exit code 10 if dns rebind error found
     arpTable["ec"] = 6 if not validate_platform(url) else arpTable["ec"]    # Check that our URL appears to be pfSense
@@ -842,7 +1116,7 @@ def get_arp_table(server, user, key):
 # get_system_tunables() pulls the System Tunable values from the advanced settings
 def get_system_tunables(server, user, key):
     tunables = {"ec" : 2, "tunables" : {}}    # Pre-define our function dictionary
-    url = wcProtocol + "://" + server    # Assign our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
     # Submit our intitial request and check for errors
     tunables["ec"] = 10 if check_dns_rebind_error(url) else tunables["ec"]    # Return exit code 10 if dns rebind error found
     tunables["ec"] = 6 if not validate_platform(url) else tunables["ec"]    # Check that our URL appears to be pfSense
@@ -879,7 +1153,7 @@ def get_system_tunables(server, user, key):
 def add_system_tunable(server, user, key, name, descr, value):
     # Local Variables
     tunableAdded = 2    # Assign our default return code. (2 means generic failure)
-    url = wcProtocol + "://" + server    # Assign our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
     existingTunables = get_system_tunables(server, user, key)    # Get our dictionary of configured tunables
     tunablePostData = {"__csrf_magic" : "", "tunable" : name, "value" : value, "descr" : descr, "save" : "Save"}    # Assign our POST data
     # Check if we got our VLAN dictionary successfully
@@ -912,7 +1186,7 @@ def add_system_tunable(server, user, key, name, descr, value):
 def get_vlan_ids(server, user, key):
     # Local Variables
     vlans = {"ec" : 2, "vlans" : {}}    # Predefine our dictionary that will track our VLAN data as well as errors
-    url = wcProtocol + "://" + server    # Assign our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
     # Submit our intitial request and check for errors
     vlans["ec"] = 10 if check_dns_rebind_error(url) else vlans["ec"]    # Return exit code 10 if dns rebind error found
     vlans["ec"] = 6 if not validate_platform(url) else vlans["ec"]    # Check that our URL appears to be pfSense
@@ -951,7 +1225,7 @@ def get_vlan_ids(server, user, key):
 def add_vlan_id(server, user, key, iface, vlanId, priority, descr):
     # Local Variables
     vlanAdded = 2    # Assign our default return code. (2 means generic failure)
-    url = wcProtocol + "://" + server    # Assign our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
     existingVlans = get_vlan_ids(server, user, key)    # Get our dictionary of configured VLANs
     vlanPostData = {"__csrf_magic" : "", "if" : iface, "tag" : vlanId, "pcp" : priority, "descr" : descr, "save" : "Save"}    # Assign our POST data
     # Check if we got our VLAN dictionary successfully
@@ -1009,7 +1283,7 @@ def add_vlan_id(server, user, key, iface, vlanId, priority, descr):
 def add_auth_server_ldap(server, user, key, descrName, ldapServer, ldapPort, transport, ldapProtocol, timeout, searchScope, baseDN, authContainers, extQuery, query, bindAnon, bindDN, bindPw, ldapTemplate, userAttr, groupAttr, memberAttr, rfc2307, groupObject, encode, userAlt):
     # Local Variables
     ldapAdded = 2    # Set return value to 2 by default (2 mean general failure)
-    url = wcProtocol + "://" + server    # Assign our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
     defaultAttrs = {
         "open" : {"user" : "cn", "group" : "cn", "member" : "member"},    # Assign default attributes for OpenLDAP
         "msad" : {"user" : "samAccountName", "group" : "cn", "member" : "memberOf"},     # Assign default attributes for MS Active Directory
@@ -1065,7 +1339,7 @@ def add_auth_server_ldap(server, user, key, descrName, ldapServer, ldapPort, tra
 
 def get_dns_entries(server, user, key):
     # Local variables
-    url = wcProtocol + "://" + server    # Assign our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
     dnsDict = {"domains" : {}, "ec" : 2}    # Initialize our DNS entry dictionary as empty
     # Submit our intitial request and check for errors
     dnsDict["ec"] = 10 if check_dns_rebind_error(url) else dnsDict["ec"]    # Return exit code 10 if dns rebind error found
@@ -1126,7 +1400,7 @@ def get_dns_entries(server, user, key):
 def add_dns_entry(server, user, key, host, domain, ip, descr):
     # Local Variables
     recordAdded = 2    # Set return value to 2 by default (2 means failed)
-    url = wcProtocol + "://" + server    # Populate our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
     dnsData = {"__csrf_magic": "","host" : host,"domain" : domain, "ip" : ip, "descr" : descr, "save" : "Save"}    # Define our DNS entry POST data
     saveDnsData = {"__csrf_magic": "", "apply": "Apply Changes"}    # Define our apply DNS changes POST data
     # Check if the record we are adding already exists
@@ -1165,7 +1439,7 @@ def get_ssl_certs(server, user, key):
     # Local Variables
     certManagerDict = {"ec" : 2, "certs" : {}}     # Initialize certManagerDict to return our certificate values and exit codes
     certIndex = 0    # Initialize certIndex to track the certificate number in the list/loop
-    url = wcProtocol + "://" + server    # Populate our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
     # Submit our intitial request and check for errors
     certManagerDict["ec"] = 10 if check_dns_rebind_error(url) else certManagerDict["ec"]    # Return exit code 10 if dns rebind error found
     certManagerDict["ec"] = 6 if not validate_platform(url) else certManagerDict["ec"]    # Check that our URL appears to be pfSense
@@ -1230,7 +1504,7 @@ def get_ssl_certs(server, user, key):
 def add_ssl_cert(server, user, key, cert, certkey, descr):
     # Local Variables
     certAdded = 2    # Set return value to 2 by default (2 means failed)
-    url = wcProtocol + "://" + server    # Populate our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
     preCertDict = get_ssl_certs(server, user, key)    # Get the current dict of certificate installed on pfSense
     preCertDictLen = len(preCertDict["certs"])    # Track the length of existing certificates in the dict
     # Define a dictionary for our SSL certificate POST data values
@@ -1301,7 +1575,7 @@ def add_ssl_cert(server, user, key, cert, certkey, descr):
 def set_wc_certificate(server, user, key, certName):
     # Local Variables
     wccCheck = 2    # Initialize wccCheck to track errors, this will be returned by the function
-    url = wcProtocol + "://" + server    # Populate our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
     selectedWcc = ""    # Initialize variable to track which certificate is currently selected
     newWcc = ""    # Initialize variable to track the certRef of our certificate to add
     wccFound = False    # Initialize boolean to track whether a certificate match has already occurred
@@ -1399,7 +1673,7 @@ def set_wc_certificate(server, user, key, certName):
 # get_firewall_aliases() pulls aliases information from pfSense and saves it to a Python dictionary
 def get_firewall_aliases(server, user, key):
     aliases = {"ec" : 2, "aliases" : {}}    # Pre-define our dictionary to track alias values and errors
-    url = wcProtocol + "://" + server    # Populate our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
      # Check for errors and assign exit codes accordingly
     aliases["ec"] = 10 if check_dns_rebind_error(url) else aliases["ec"]    # Return exit code 10 if dns rebind error found
     aliases["ec"] = 6 if not validate_platform(url) else aliases["ec"]    # Check that our URL appears to be pfSense
@@ -1471,7 +1745,7 @@ def modify_firewall_alias(server, user, key, aliasName, newValues):
     # Local Variables
     aliasIdData = get_firewall_aliases(server, user, key)    # Get the alias ID to determine which alias to modify
     aliasModded = 2 if aliasIdData["ec"] == 0 else aliasIdData["ec"]    # Default aliasModded to 2 if authentication didn't fail when we pulled the aliasIDData, otherwise return 3 (auth failed)
-    url = wcProtocol + "://" + server    # Populate our base URL
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
     # If we successfully pulled our aliasId
     if aliasModded == 2:
         # Check if our alias name is in our dictionary
@@ -1520,7 +1794,7 @@ def main():
     # Local Variables
     global wcProtocol    # Make wcProtocol modifiable globally
     global wcProtocolPort    # Make wcProtocolPort modifiable globally
-    pfsenseServer = firstArg    # Assign the server value to the firstArg (filtered)
+    pfsenseServer = firstArg.replace("https://", "")    # Assign the server value to the firstArg (filtered)
     pfsenseAction = filter_input(secondArg)    # Assign the action to execute (filtered)
     # Check if user requests HTTPS override
     if pfsenseServer.lower().startswith("http://"):
@@ -1533,7 +1807,7 @@ def main():
         nonStdPortInt = int(nonStdPort) if nonStdPort.isdigit() else 999999    # Assign a integer value of our port variable, if it is not a number save out of range
         wcProtocolPort = nonStdPortInt if 1 <= nonStdPortInt <= 65535 else wcProtocolPort    # Change our webUI port specification if it is a valid number
         pfsenseServer = pfsenseServer.replace(":" + nonStdPort, "")    # Remove our port specification from our servername string
-    pfsenseServer = filter_input(pfsenseServer.replace("http://", "").replace("https://", ""))    # Filter our hostname/IP input
+    pfsenseServer = filter_input(pfsenseServer.replace("http://", ""))    # Filter our hostname/IP input
     # Check if we are simply requesting the software version
     if firstArg.upper() in ("--VERSION", "-V"):
         print(get_exit_message("version", "", "generic", "", ""))
@@ -2274,6 +2548,119 @@ def main():
                 else:
                     print(get_exit_message(advAdmData["ec"], pfsenseServer, pfsenseAction, advAdmFilter, ""))
                     sys.exit(advAdmData["ec"])
+            # Functions and processes for flag --setup-wc
+            elif pfsenseAction == "--setup-wc":
+                # Action variables
+                maxProc = filter_input(thirdArg) if len(sys.argv) > 3 else input("Max processes [1-1024, default]: ")    # Assign our max process option, prompt user for input if empty
+                maxProc = "default" if maxProc == "" else maxProc    # Assume default if entry is blank
+                maxProcInt = int(maxProc) if maxProc.isdigit() else 99999    # Convert the maxProc value to an integer if possible, otherwise assign an integer that is out of range
+                uiRedirect = filter_input(fourthArg) if len(sys.argv) > 4 else input("HTTP redirect [enable, disable, default]: ")    # Assign our redirect option, prompt user for input if empty
+                uiRedirect = "default" if uiRedirect == "" else uiRedirect    # Assume default if entry is blank
+                hsts = filter_input(fifthArg) if len(sys.argv) > 5 else input("HTTP Strict Transport Security [enable, disable, default]: ")    # Assign our hsts option, prompt user for input if empty
+                hsts = "default" if hsts == "" else hsts    # Assume default if entry is blank
+                autoComplete = filter_input(sixthArg) if len(sys.argv) > 6 else input("Login auto-complete [enable, disable, default]: ")    # Assign our login autocompletion option, prompt user for input if empty
+                autoComplete = "default" if autoComplete == "" else autoComplete    # Assume default if entry is blank
+                authLog = filter_input(seventhArg) if len(sys.argv) > 7 else input("Authentication logging [enable, disable, default]: ")    # Assign our login logging option, prompt user for input if empty
+                authLog = "default" if authLog == "" else authLog    # Assume default if entry is blank
+                uiAntilock = filter_input(eighthArg) if len(sys.argv) > 8 else input("WebUI anti-lockout [enable, disable, default]: ")    # Assign our uiAntilock option, prompt user for input if empty
+                uiAntilock = "default" if uiAntilock == "" else uiAntilock    # Assume default if entry is blank
+                dnsRebind = filter_input(ninthArg) if len(sys.argv) > 9 else input("DNS Rebind checking [enable, disable, default]: ")    # Assign our dns rebind option, prompt user for input if empty
+                dnsRebind = "default" if dnsRebind == "" else dnsRebind    # Assume default if entry is blank
+                altHost = filter_input(tenthArg) if len(sys.argv) > 10 else input("Alternate hostnames (separate FQDNs by space): ")    # Assign our alt hostname option, prompt user for input if empty
+                altHost = "default" if altHost == "" else altHost    # Assume default if entry is blank
+                httpRef = filter_input(eleventhArg) if len(sys.argv) > 11 else input("HTTP_REFERER checking [enable, disable, default]: ")    # Assign our http_referer option, prompt user for input if empty
+                httpRef = "default" if httpRef == "" else httpRef    # Assume default if entry is blank
+                tabText = filter_input(twelfthArg) if len(sys.argv) > 12 else input("Display hostname in tab [enable, disable, default]: ")    # Assign our http_referer option, prompt user for input if empty
+                tabText = "default" if tabText == "" else tabText    # Assume default if entry is blank
+                user = fourteenthArg if thirteenthArg == "-u" and fourteenthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = sixteenthArg if fifteenthArg == "-p" and sixteenthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # INPUT VALIDATION
+                # Check that our integer is in range
+                if 1 <= maxProcInt <= 1024 or maxProc.lower() == "default":
+                    # Check that our uiRedirect is valid
+                    if uiRedirect.lower() in ["enable", "disable", "redirect", "no-redirect", "default"]:
+                        # Check that our HSTS value is valid
+                        if hsts.lower() in ["enable", "disable", "hsts", "no-hsts", "default"]:
+                            # Check that our auto complete value is valid
+                            if autoComplete.lower() in ["enable", "disable", "autocomplete", "no-autocomplete", "default"]:
+                                # Check that our authLog value is valid
+                                if authLog.lower() in ["enable", "disable", "loginmsg", "no-loginmsg", "default"]:
+                                    # Check that our uiAntilock value is valid
+                                    if uiAntilock.lower() in ["enable", "disable", "antilockout", "no-antilockout", "default"]:
+                                        # Check that our dnsRebind value is valid
+                                        if dnsRebind.lower() in ["enable", "disable", "dnsrebind", "no-dnsrebind", "default"]:
+                                            # Check that our httpRef value is valid
+                                            if httpRef.lower() in ["enable", "disable", "httpreferer", "no-httpreferer", "default"]:
+                                                # Check that our tabText value is valid
+                                                if tabText.lower() in ["enable", "disable", "display-tabtext", "hide-tabtext", "default"]:
+                                                    # Run our function now that all input is validated
+                                                    setupWcEc = setup_wc(pfsenseServer, user, key, maxProc, uiRedirect, hsts, autoComplete, authLog, uiAntilock, dnsRebind, altHost, httpRef, tabText)
+                                                    # Print our exit message and exit script on returned exit code
+                                                    print(get_exit_message(setupWcEc, pfsenseServer, pfsenseAction, "", ""))
+                                                    sys.exit(setupWcEc)
+                                                # If our tabText value is invalid
+                                                else:
+                                                    print(
+                                                    "invalid_tabtext", pfsenseServer, pfsenseAction, tabText, "")
+                                                    sys.exit(1)
+                                            # If our httpRef value is invalid
+                                            else:
+                                                print("invalid_httpreferer", pfsenseServer, pfsenseAction, httpRef, "")
+                                                sys.exit(1)
+                                        # If our dnsRebind value is invalid
+                                        else:
+                                            print("invalid_dnsrebind", pfsenseServer, pfsenseAction, dnsRebind, "")
+                                            sys.exit(1)
+                                    # If our uiAntilock value is invalid
+                                    else:
+                                        print("invalid_lockout", pfsenseServer, pfsenseAction, uiAntilock, "")
+                                        sys.exit(1)
+                                # If our loginmsg value is invalid
+                                else:
+                                    print("invalid_loginmsg", pfsenseServer, pfsenseAction, authLog, "")
+                                    sys.exit(1)
+                            # If our autocomplete value is invalid
+                            else:
+                                print("invalid_autocomplete", pfsenseServer, pfsenseAction, autoComplete, "")
+                                sys.exit(1)
+                        # If our HSTS value is invalid
+                        else:
+                            print("invalid_hsts", pfsenseServer, pfsenseAction, hsts, "")
+                            sys.exit(1)
+                    # If our redirect value is invalid
+                    else:
+                        print("invalid_redirect", pfsenseServer, pfsenseAction, uiRedirect, "")
+                        sys.exit(1)
+                # If integer is out of range
+                else:
+                    print(get_exit_message("invalid_proc", pfsenseServer, pfsenseAction, maxProc, ""))
+                    sys.exit(1)
+            # Functions and process for flag --set-wc-port
+            elif pfsenseAction == "--set-wc-port":
+                # Action variables
+                protocol = filter_input(thirdArg) if len(sys.argv) > 3 else input("HTTP Protocol [http, https, default]: ")    # Get our protocol from the user, either inline or interactively
+                port = filter_input(fourthArg) if len(sys.argv) > 4 else input("TCP port [1-65535, default]: ")    # Get ou webconfigurator port either inline or interactively
+                portInt = int(port) if port.isdigit() else 999999    # Convert our port to an integer if possible, otherwise assign a port value that is out of range
+                user = sixthArg if fifthArg == "-u" and sixthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = eighthArg if seventhArg == "-p" and eighthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # INPUT VALIDATION
+                # Check that our protocol is valid
+                if protocol.lower() in ["http", "https", "default"]:
+                    # Check that our port is valid
+                    if 1 <= portInt <= 65535 or port.upper() == "DEFAULT":
+                        # Run our function
+                        wcPortEc = set_wc_port(pfsenseServer, user ,key, protocol, port)
+                        # Print our exit message and exit on code
+                        print(get_exit_message(wcPortEc, pfsenseServer,pfsenseAction, protocol, port))
+                        sys.exit(wcPortEc)
+                    # If our port is out of range
+                    else:
+                        print(get_exit_message("invalid_port", pfsenseServer, pfsenseAction, port, ""))
+                        sys.exit(1)
+                # If our protocol is invalid
+                else:
+                    print(get_exit_message("invalid_protocol", pfsenseServer, pfsenseAction, protocol, ""))
+                    sys.exit(1)
             # Functions and processes for flag --setup-ssh
             elif pfsenseAction == "--setup-ssh":
                 # Action variables
