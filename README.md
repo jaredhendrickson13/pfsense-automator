@@ -47,6 +47,59 @@ Commands
         - `--console-options` (`-co`) : Return only configuration from the Console options section of /system_advanced_admin.php
         - `--json=<directory_path>` : Exports VLAN data to a JSON file given an existing directory
 
+- `--setup-wc` : Configures pfSense webConfigurator's advanced options. This excludes the webConfigurator protocol and port number as they cannot be changed statefully. See `--set-wc-port` below. 
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-wc <max_procs> <http_redirect> <hsts> <login_autocomplete> <login_msg> <anti_lockout> <dns_rebind> <alt_hostnames> <http_referer> <tab_text>`
+    - **Arguments**:
+        - `<max_procs>` - Sets the maxinum number of processes allowed by the webConfigurator
+            - `1-1024` - Assign the number of maximum processes 
+            - `default` - Retains the current configured value
+        - `<http_redirect>` - Enables or disables HTTP to HTTPS redirects 
+            - `redirect` (`enable`) ( - Enables HTTP to HTTPS redirects within the webConfigurator
+            - `no-redirect` (`disable`) - Disables HTTP to HTTPS redirects within the webConfigurator
+            - `default` - Retains the current configured value
+        - `<hsts>` - Enables or disables HTTP Strict Transport Security enforcement
+            - `hsts` (`enable`) - Enables HTTP Strict Transport Security enforcement
+            - `no-hsts` (`disable`) - Disables HTTP Strict Transport Security enforcement
+            - `default` - Retains the current configured value
+        - `<login_autocomplete>` - Enables or disables login auto-completion
+            - `autocomplete` (`enable`) - Enables login auto-completion
+            - `no-autocomplete` (`disable`) - Disables login auto-completion
+            - `default` - Retains the current configured value
+        - `<login_msg>` - Enables or disables webConfigurator authentication logging 
+           - `loginmsg` (`enable`) - Enables webConfigurator authentication logging
+           - `no-loginmsg` (`disable`) - Disables webConfigurator authentication logging
+           - `default` - Retains the current configured value
+        - `<anti_lockout>` - Enables or disables webConfigurator anti-lockout rule
+            - `antilockout` (`enable`) - Enables webConfigurator anti-lockout rule
+            - `no-antilockout` (`disable`) - Disables webConfigurator anti-lockout rule
+            - `default` - Retains the current configured value
+        - `<dns_rebind>` - Enables or disables DNS rebind checks
+            - `dnsrebind` (`enable`) - Enables DNS rebind checks
+            - `no-dnsrebind` (`disable`) - Disables DNS rebind checks
+            - `default` - Retains the current configured value
+        - `<alt_hostnames>` - Add additional hostnames to whitelist in HTTP_REFERER and DNS Rebind checks
+            - `<FQDNs>` - List FQDNs. Separate multiple entries with spaces
+            - `default` - Retains the current configured value
+        - `<http_referer>` - Enables or disables HTTP_REFERER check
+            - `httpreferer` (`enable`) - Enables HTTP_REFERER check
+            - `no-httpreferer` (`disable`) - Disables HTTP_REFERER check
+            - `default` - Retains the current configured value
+        - `<tab_text>` - Configure webConfigurator to display pfSense hostname in tab text
+            - `display-tabtext` (`enable`) - Enables displaying of hostname in tab text
+            - `hide-tabtext` (`disable`) - Disables displaying of hostname in tab text
+            - `default` - Retains the current configured value
+
+- `--set-wc-port` - Configures the webConfigurator's HTTP protocol and TCP port specification
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --set-wc-port <http_protocol> <tcp_port>`
+    - **Arguments**:
+        - `<http_protocol>` - Assigns the HTTP protocol to use
+            - `http` - Use basic HTTP for webConfigurator connections. _Caution: this will allow credentials to pass in cleartext_
+            - `https` - Use encrypted HTTPS for webConfigurator connections (recommended)
+            - `default` - Retain the existing configured value
+        - `<tcp_port>` - Specify which TCP port the webConfigurator will bind to
+            - `1-65535` - Assigns a specified TCP port value between 1-65535
+            - `default` - Retains the current configured value
+
 - `--setup-ssh` : Configures `sshd` on pfSense
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-ssh <enable_ssh> <ssh_port> <ssh_auth> <sshagent_forwarding>`
     - **Arguments**:
