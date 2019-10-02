@@ -36,7 +36,23 @@ Commands
         - `--iface=<iface_id>` (`-i`) : Return only VLANs configured on a specific interface 
         - `--json=<directory_path>` : Exports VLAN data to a JSON file given an existing directory
 
-- `--read-adv-admin` : Attempts to read current Advanced Admin settings from /system_advanced_admin.php
+- `--read-general-setup` : Reads current General Setup settings from /system.php
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-general-setup <argument>`
+    - **Arguments**:
+        - `--all` (`-a`,`-d`,`default`) : Return all configured Advanced Admin options
+        - `--system` (`-s`) : Return only configuration from the System section of /system.php
+        - `--dns` (`-n`) : Return only configuration from the DNS section of /system.php
+        - `--localization` (`-l`) : Return only configuration from the Localization section of /system.php
+        - `--webconfigurator` (`-wc`) : Return only configuration from the webConfigurator section of /system.php
+        - `--json=<directory_path>` : Exports General Setup data to a JSON file given an existing directory
+
+- `--set-system-hostname` : Sets pfSense's system hostname values. _Note: proceed with caution if you have __DNS rebind checks enabled__! Either use the IP address to connect, or ensure that pfSense is able to resolve the new system hostname back to it's own IP address before changing the hostname_
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --set-system-hostname <hostname> <domain>`
+    - **Arguments**:
+        - `<hostname>` : Specify a host portion for the system (e.g __hostname__.domain.com)
+        - `<domain>` : Specify a domain the domain portion for the system (e.g hostname.__domain.com__)
+
+- `--read-adv-admin` : Reads current Advanced Admin settings from /system_advanced_admin.php
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-adv-admin <argument>`
     - **Arguments**:
         - `--all` (`-a`,`-d`,`default`) : Return all configured Advanced Admin options
@@ -45,7 +61,7 @@ Commands
         - `--login-protection` (`-lp`) : Return only configuration from the Login Protection section of /system_advanced_admin.php
         - `--serial-communications` (`-sc`) : Return only configuration from the Serial Communications section of /system_advanced_admin.php
         - `--console-options` (`-co`) : Return only configuration from the Console options section of /system_advanced_admin.php
-        - `--json=<directory_path>` : Exports VLAN data to a JSON file given an existing directory
+        - `--json=<directory_path>` : Exports Advanced Admin data to a JSON file given an existing directory
 
 - `--setup-wc` : Configures pfSense webConfigurator's advanced options. This excludes the webConfigurator protocol and port number as they cannot be changed statefully. See `--set-wc-port` below. 
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-wc <max_procs> <http_redirect> <hsts> <login_autocomplete> <login_msg> <anti_lockout> <dns_rebind> <alt_hostnames> <http_referer> <tab_text>`

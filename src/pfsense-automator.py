@@ -85,6 +85,29 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_vlan" : "Error: VLAN `" + data1 + "` out of range. Expected 1-4094",
             "invalid_priority" : "Error: VLAN priority `" + data1 + "` out of range. Expected 0-7"
         },
+        # Error/success messages for --read-general-setup flag
+        "--read-general-setup": {
+            2: "Error: Unexpected error reading General Setup",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err": "Error: export directory `" + data1 + "` does not exist",
+            "export_success": "Successfully exported general setup to " + data1,
+            "export_fail": "Failed to export general setup as JSON"
+        },
+        # Error/success messages for --set-system-hostname
+        "--set-system-hostname": {
+            0: "Successfully set system hostname to `" + data1 + "." + data2 + "` on `" + server + "`",
+            2: "Error: Unexpected error configuring system hostname",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            9: "Error: Could not update system hostname. A valid DNS entry for `" + data1 + "." + data2 + "` may not exist",
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "inter_warn": "Warning: if DNS Rebind checks are enabled, changing the system hostname may result in an FQDN lockout",
+        },
         # Error/success messages for --read-adv-admin flag
         "--read-adv-admin": {
             2: "Error: Unexpected error reading Advanced Settings",
@@ -574,7 +597,7 @@ def get_general_setup(server, user, key):
             if "<h2 class=\"panel-title\">System</h2>" in getGeneralData["text"]:
                 # Split our response to get our System table configuration
                 systemTable = getGeneralData["text"].split("<h2 class=\"panel-title\">System</h2>")[1].split("<span class=\"help-block\">Do not use '.local'")[0]
-                general["general"]["system"]["host"] = systemTable.split("name=\"hostname\"")[1].split("value=\"")[1].split("\"")[0] if "name=\"hostname\"" in systemTable else ""    # Get our hostname value
+                general["general"]["system"]["hostname"] = systemTable.split("name=\"hostname\"")[1].split("value=\"")[1].split("\"")[0] if "name=\"hostname\"" in systemTable else ""    # Get our hostname value
                 general["general"]["system"]["domain"] = systemTable.split("name=\"domain\"")[1].split("value=\"")[1].split("\"")[0] if "name=\"domain\"" in systemTable else ""    # Get our domain value
             # Check that we have a DNS table
             if "<h2 class=\"panel-title\">DNS Server Settings</h2>" in getGeneralData["text"]:
@@ -626,10 +649,10 @@ def get_general_setup(server, user, key):
                     counter = counter + 1
             # Check that we have a LOCALIZATION table
             if "<h2 class=\"panel-title\">Localization</h2>" in getGeneralData["text"]:
-                localTable = getGeneralData["text"].split("<h2 class=\"panel-title\">Localization</h2>")[1].split("<span class=\"help-block\">Choose a language")[0]
-                # Check if we have a timeserver configuartion
+                localTable = getGeneralData["text"].split("<h2 class=\"panel-title\">Localization</h2>")[1].split("<span class=\"help-block\">Choose a language")[0]   # Split HTML into specific section
+                # Check if we have a timeserver configuration
                 if "name=\"timeservers\"" in localTable:
-                    general["general"]["localization"]["timeservers"] = localTable.split("name=\"timeservers\"")[1].split("value=\"")[1].split("\"")[0]    # save our timeservers
+                    general["general"]["localization"]["timeservers"] = localTable.split("name=\"timeservers\"")[1].split("value=\"")[1].split("\"")[0]    # Save our timeservers
                 # Check that we have a timezone configuration
                 if "name=\"timezone\"" in localTable:
                     # Loop through our timezones and find our currently selected timezone
@@ -637,10 +660,10 @@ def get_general_setup(server, user, key):
                     for tz in timeTable:
                         # Check if this value is selected
                         if "selected>" in tz:
-                            general["general"]["localization"]["timezone"] = tz.split("\"")[0]    # Assign our timezone
+                            general["general"]["localization"]["timezone"] = tz.split("\"")[0]    # Save our timezone
                             break    # Break the loop as we have found our value
                         else:
-                            general["general"]["localization"]["timezone"] = ""    # Assign default timezone
+                            general["general"]["localization"]["timezone"] = ""    # Save default timezone
                 # Check that we have a language configuration
                 if "name=\"language\"" in localTable:
                     # Loop through our languages and find our currently selected language
@@ -648,16 +671,223 @@ def get_general_setup(server, user, key):
                     for lg in langTable:
                         # Check if this value is selected
                         if "selected>" in lg:
+                            print
                             general["general"]["localization"]["language"] = lg.split("\"")[0]    # Assign our language
                             break    # Break the loop as we have found our value
                         else:
-                            general["general"]["localization"]["timezone"] = ""    # Assign default language
-                general["ec"] = 0    # Return our success exit code
+                            general["general"]["localization"]["language"] = ""    # Assign default language
+                # If we do not have a language value
+                else:
+                    general["general"]["localization"]["language"] = ""    # Assign default language
+            # Check that we have a WEBCONFIGURATOR table
+            if "<h2 class=\"panel-title\">webConfigurator</h2>" in getGeneralData["text"]:
+                wcTable = getGeneralData["text"].split("<h2 class=\"panel-title\">webConfigurator</h2>")[1].split("<script type=\"text/javascript\">")[0]   # Split HTML into specific section
+                # Check if we have a pfSense color scheme configuration
+                if "name=\"webguicss\"" in wcTable:
+                     # Loop through our color schemes and find our currently selected color scheme
+                    wcGuiScheme = wcTable.split("name=\"webguicss\"")[1].split("</select>")[0].split("<option value=\"")
+                    for c in wcGuiScheme:
+                        # Check if this value is selected
+                        if "selected>" in c:
+                            general["general"]["webconfigurator"]["webguicss"] = c.split("\"")[0]    # Save our color scheme
+                            break    # Break the loop as we have found our value
+                        else:
+                            general["general"]["webconfigurator"]["webguicss"] = ""    # Save default color scheme
+                # If we do not have a webguicss value
+                else:
+                    general["general"]["webconfigurator"]["webguicss"] = ""    # Assign default webguicss
+                # Check if we have a UI menu fix preferenece
+                if "name=\"webguifixedmenu\"" in wcTable:
+                     # Loop through our UI menu fix values and find our currently selected UI menu fix
+                    wcGuiFixed = wcTable.split("name=\"webguifixedmenu\"")[1].split("</select>")[0].split("<option value=\"")
+                    for f in wcGuiFixed:
+                        # Check if this value is selected
+                        if "selected>" in f:
+                            general["general"]["webconfigurator"]["webguifixedmenu"] = f.split("\"")[0]    # Save our webguifixedmenu
+                            break    # Break the loop as we have found our value
+                        else:
+                            general["general"]["webconfigurator"]["webguifixedmenu"] = ""    # Save default webguifixedmenu
+                # If we do not have a webguifixedmenu value
+                else:
+                    general["general"]["webconfigurator"]["webguifixedmenu"] = ""    # Assign default webguifixedmenu
+                # Check if we have a webguihostnamemenu value
+                if "name=\"webguihostnamemenu\"" in wcTable:
+                     # Loop through our webguihostnamemenu and find our currently selected webguihostnamemenu
+                    wcGuiHost = wcTable.split("name=\"webguihostnamemenu\"")[1].split("</select>")[0].split("<option value=\"")
+                    for h in wcGuiHost:
+                        # Check if this value is selected
+                        if "selected>" in h:
+                            general["general"]["webconfigurator"]["webguihostnamemenu"] = h.split("\"")[0]    # Save our webguihostnamemenu
+                            break    # Break the loop as we have found our value
+                        else:
+                            general["general"]["webconfigurator"]["webguihostnamemenu"] = ""    # Save default webguihostnamemenu
+                # If we do not have a webguihostnamemenu value
+                else:
+                    general["general"]["webconfigurator"]["webguihostnamemenu"] = ""    # Assign default webguihostnamemenu
+                # Check if we have a logincss value
+                if "name=\"logincss\"" in wcTable:
+                     # Loop through our logincss and find our currently selected logincss
+                    wcLoginColor = wcTable.split("name=\"logincss\"")[1].split("</select>")[0].split("<option value=\"")
+                    for lc in wcLoginColor:
+                        # Check if this value is selected
+                        if "selected>" in lc:
+                            general["general"]["webconfigurator"]["logincss"] = lc.split("\"")[0]    # Save our logincss
+                            break    # Break the loop as we have found our value
+                        else:
+                            general["general"]["webconfigurator"]["logincss"] = ""    # Save default logincss
+                 # If we do not have a logincss value
+                else:
+                    general["general"]["webconfigurator"]["logincss"] = ""    # Assign default logincss
+                # Check if we have a dashboardcolumns option
+                if "name=\"dashboardcolumns\"" in wcTable:
+                    general["general"]["webconfigurator"]["dashboardcolumns"] = wcTable.split("name=\"dashboardcolumns\"")[1].split("value=\"")[1].split("\"")[0]     # Get our value
+                # If we do not have this option, assign empty string
+                else:
+                    general["general"]["webconfigurator"]["dashboardcolumns"] = ""
+                # Check if we have a dnslocalhost option
+                if "<input name=\"interfacessort\"" in wcTable:
+                    general["general"]["webconfigurator"]["interfacessort"] = True if "checked" in wcTable.split("<input name=\"interfacessort\"")[1].split("</label>")[0] else False
+                # If we do not have this option, assign empty string
+                else:
+                    general["general"]["webconfigurator"]["interfacessort"] = ""
+                # Check if we have a dashboardavailablewidgetspanel option
+                if "<input name=\"dashboardavailablewidgetspanel\"" in wcTable:
+                    general["general"]["webconfigurator"]["dashboardavailablewidgetspanel"] = True if "checked" in wcTable.split("<input name=\"dashboardavailablewidgetspanel\"")[1].split("</label>")[0] else False
+                # If we do not have this option, assign empty string
+                else:
+                    general["general"]["webconfigurator"]["dashboardavailablewidgetspanel"] = ""
+                # Check if we have a systemlogsfilterpanel option
+                if "<input name=\"systemlogsfilterpanel\"" in wcTable:
+                    general["general"]["webconfigurator"]["systemlogsfilterpanel"] = True if "checked" in wcTable.split("<input name=\"systemlogsfilterpanel\"")[1].split("</label>")[0] else False
+                # If we do not have this option, assign empty string
+                else:
+                    general["general"]["webconfigurator"]["systemlogsfilterpanel"] = ""
+                # Check if we have a systemlogsmanagelogpanel option
+                if "<input name=\"systemlogsmanagelogpanel\"" in wcTable:
+                    general["general"]["webconfigurator"]["systemlogsmanagelogpanel"] = True if "checked" in wcTable.split("<input name=\"systemlogsmanagelogpanel\"")[1].split("</label>")[0] else False
+                # If we do not have this option, assign empty string
+                else:
+                    general["general"]["webconfigurator"]["systemlogsmanagelogpanel"] = ""
+                # Check if we have a systemlogsmanagelogpanel option
+                if "<input name=\"statusmonitoringsettingspanel\"" in wcTable:
+                    general["general"]["webconfigurator"]["statusmonitoringsettingspanel"] = True if "checked" in wcTable.split("<input name=\"statusmonitoringsettingspanel\"")[1].split("</label>")[0] else False
+                # If we do not have this option, assign empty string
+                else:
+                    general["general"]["webconfigurator"]["statusmonitoringsettingspanel"] = ""
+                # Check if we have a requirestatefilter option
+                if "<input name=\"requirestatefilter\"" in wcTable:
+                    general["general"]["webconfigurator"]["requirestatefilter"] = True if "checked" in wcTable.split("<input name=\"requirestatefilter\"")[1].split("</label>")[0] else False
+                # If we do not have this option, assign empty string
+                else:
+                    general["general"]["webconfigurator"]["requirestatefilter"] = ""
+                # Check if we have a webguileftcolumnhyper option
+                if "<input name=\"webguileftcolumnhyper\"" in wcTable:
+                    general["general"]["webconfigurator"]["webguileftcolumnhyper"] = True if "checked" in wcTable.split("<input name=\"webguileftcolumnhyper\"")[1].split("</label>")[0] else False
+                # If we do not have this option, assign empty string
+                else:
+                    general["general"]["webconfigurator"]["webguileftcolumnhyper"] = ""
+                # Check if we have a disablealiaspopupdetail option
+                if "<input name=\"disablealiaspopupdetail\"" in wcTable:
+                    general["general"]["webconfigurator"]["disablealiaspopupdetail"] = True if "checked" in wcTable.split("<input name=\"disablealiaspopupdetail\"")[1].split("</label>")[0] else False
+                # If we do not have this option, assign empty string
+                else:
+                    general["general"]["webconfigurator"]["disablealiaspopupdetail"] = ""
+                # Check if we have a roworderdragging option
+                if "<input name=\"roworderdragging\"" in wcTable:
+                    general["general"]["webconfigurator"]["roworderdragging"] = True if "checked" in wcTable.split("<input name=\"roworderdragging\"")[1].split("</label>")[0] else False
+                # If we do not have this option, assign empty string
+                else:
+                    general["general"]["webconfigurator"]["roworderdragging"] = ""
+                # Check if we have a loginshowhost option
+                if "<input name=\"loginshowhost\"" in wcTable:
+                    general["general"]["webconfigurator"]["loginshowhost"] = True if "checked" in wcTable.split("<input name=\"loginshowhost\"")[1].split("</label>")[0] else False
+                # If we do not have this option, assign empty string
+                else:
+                    general["general"]["webconfigurator"]["loginshowhost"] = ""
+                # Check if we have a dashboardperiod option
+                if "name=\"dashboardperiod\"" in wcTable:
+                    general["general"]["webconfigurator"]["dashboardperiod"] = wcTable.split("name=\"dashboardperiod\"")[1].split("value=\"")[1].split("\"")[0]     # Get our value
+                # If we do not have this option, assign empty string
+                else:
+                    general["general"]["webconfigurator"]["dashboardperiod"] = ""
+            general["ec"] = 0    # Return our success exit code
         # If we did not have permissions
         else:
             general["ec"] = 15    # Assign exit code 15 (permission denied)
     # Return our dictionary
     return general
+
+# get_general_setup_post_data() converts our advanced admin dictionary to a POST data dictionary
+def get_general_setup_post_data(dictionary):
+    # Local Variables
+    postData = {}    # Pre-define our return value as empty dictionary
+    # Loop through our existing /system_advanced_admin.php configuration and add the data to the POST request
+    for table, data in dictionary.items():
+        # Loop through each value in the table dictionaries
+        for key, value in data.items():
+            value = "yes" if value == True else value  # Swap true values to "yes"
+            value = "" if value == False else value  # Swap false values to empty string
+            # Check if we are checking our login protection whitelist
+            if key == "servers":
+                # Add each of our whitelisted IPs to our post data
+                for id, info in value.items():
+                    dnsId = info["id"]
+                    postData["dns" + dnsId] = info["ip"]
+                    postData["dnshost" + dnsId] = info["hostname"]
+                    postData["dnsgw" + dnsId] = info["gateway"]
+            # If we are not adding whitelist values, simply add the key and value
+            else:
+                postData[key] = value  # Populate our data to our POST data
+    # Return our POST data dictionary
+    return postData
+
+# set_system_hostname() assigns the hostname and domain value in /system.php
+def set_system_hostname(server, user, key, host, domain):
+    # Local variables
+    setSysHostEc = 2    # Assign our default exit code (unexpected error)
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    existingSysHost = get_general_setup(server, user, key)    # Assign dictionary of existing general setup configuration
+    # Check if we got our general setup dictionary successfully
+    if existingSysHost["ec"] == 0:
+        # FORMAT OUR POST DATA
+        sysHostPostData = get_general_setup_post_data(existingSysHost["general"])    # Convert our general data into a POST dictionary
+        # Update our CSRF, save value, and take our POST request and save a new GET request that should show our new configuration
+        sysHostPostData["__csrf_magic"] = get_csrf_token(url + "/system.php", "GET")
+        sysHostPostData["save"] = "Save"
+        # Check that we do not want to retain our current value
+        if host.upper() != "DEFAULT":
+            sysHostPostData["hostname"] = host    # Save our host POST value
+        # Check that we do not want to retain our current value
+        if domain.upper() != "DEFAULT":
+            sysHostPostData["domain"] = domain    # Save our domain value to our POST data
+        if setSysHostEc == 2:
+            # Loop pulling our updated config, if DNS rebind is detected try switching the pfSense server to the new hostname
+            updateCount = 0    # Assign a loop counter
+            while True:
+                postSysHost = http_request(url + "/system.php", sysHostPostData, {}, "POST")    # Run our POST request
+                newSysHost = get_general_setup(server, user, key)    # Pull our updated configuration to check against our post data
+                if newSysHost["ec"] == 10:
+                    server = sysHostPostData["hostname"] + "." + sysHostPostData["domain"]    # Try to use our new hostname if we experience a DNS rebind
+                # If we did not experience a DNS rebind error, break the loop
+                else:
+                    break
+                # If we ran through our loop three times assign a separate exit code
+                if updateCount > 3:
+                    setSysHostEc = 9    # Assign our could not update exit code
+                    break
+                updateCount = updateCount + 1    # Increase our counter
+            # Format our configuration dictionary back into a POST dictionary
+            newSysHostPostData = get_general_setup_post_data(newSysHost["general"])
+            sysHostPostData.pop("__csrf_magic", None)    # Remove our previous CSRF token so we can compare only configuration values below
+            sysHostPostData.pop("save", None)    # Remove our previous save value so we can compare only configuration values below
+            # Check that our values were updated
+            if newSysHostPostData == sysHostPostData:
+                setSysHostEc = 0    # Assign our success exit code
+    # If we could not successfully pull our general setup configuration, return the exit code of that function
+    else:
+        setSysHostEc = existingSysHost["ec"]
+    # Return our exit code
+    return setSysHostEc
 
 # get_system_advanced_admin() pulls our current configuration from System > Advanced > Admin Access and saves it to a dictionary
 def get_system_advanced_admin(server, user, key):
@@ -2462,6 +2692,99 @@ def main():
                 else:
                     print(get_exit_message(tunables["ec"], pfsenseServer, pfsenseAction, "", ""))
                     sys.exit(tunables["ec"])
+            # Functions and processes for flag --read-general-setup
+            elif pfsenseAction == "--read-general-setup":
+                generalFilter = thirdArg if thirdArg is not None else ""    # Assign our third argument as a filter value
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                generalSetupData = get_general_setup(pfsenseServer, user, key)  # Get our data dictionary
+                # Check our data pull exit code
+                if generalSetupData["ec"] == 0:
+                    # Check which filter/argument was passed in
+                    # If user wants to print SYSTEM settings, or everything
+                    if generalFilter.upper() in ["-S", "--SYSTEM", "-A", "--ALL", "DEFAULT", "-D"]:
+                        print(structure_whitespace("--SYSTEM", 50, "-", False))
+                        print(structure_whitespace("Hostname: ", 25, " ", False) + generalSetupData["general"]["system"]["hostname"])
+                        print(structure_whitespace("Domain: ", 25, " ", False) + generalSetupData["general"]["system"]["domain"])
+                    # If user wants to print DNS settings, or everything
+                    if generalFilter.upper() in ["-N", "--DNS", "-A", "--ALL", "DEFAULT", "-D"]:
+                        print(structure_whitespace("--DNS CLIENT", 50, "-", False))
+                        print(structure_whitespace("DNS Override: ", 25, " ", False) + str(generalSetupData["general"]["dns"]["dnsallowoverride"]))
+                        print(structure_whitespace("No DNS Localhost: ", 25, " ", False) + str(generalSetupData["general"]["dns"]["dnslocalhost"]))
+                        # Loop through our DNS servers and print configured info
+                        for key,value in generalSetupData["general"]["dns"]["servers"].items():
+                            ip = structure_whitespace(value["ip"] + " ", 15, " ", True)    # Format our IP
+                            hostname = structure_whitespace("Host: " + value["hostname"] + " ", 25, " ", True)    # Format our hostname
+                            gw = structure_whitespace("Gateway: " + value["gateway"], 18, " ", True)    # Format our Gateway
+                            print(structure_whitespace("DNS" + value["id"] + ": ", 25, " ", False) + ip + hostname + gw)    # Print our DNS line
+                    # If user wants to print LOCALIZATION settings, or everything
+                    if generalFilter.upper() in ["-L", "--LOCALIZATION", "-A", "--ALL", "DEFAULT", "-D"]:
+                        print(structure_whitespace("--LOCALIZATION", 50, "-", False))
+                        print(structure_whitespace("Timezone: ", 25, " ", False) + str(generalSetupData["general"]["localization"]["timezone"]))
+                        print(structure_whitespace("Language: ", 25, " ", False) + str(generalSetupData["general"]["localization"]["language"]))
+                        # Loop through our timeservers and print their values
+                        tsCounter = 0    # Assign a loop counter
+                        tsList = generalSetupData["general"]["localization"]["timeservers"].split(" ")    # Split our timeservers into a list
+                        for ts in tsList:
+                            # Check that we have a value
+                            if ts != "":
+                                print(structure_whitespace("Timeserver" + str(tsCounter) + ": ", 25, " ", False) + ts)    # Print each of our configured timeservers
+                                tsCounter = tsCounter + 1    # Increase our counter
+                    # If user wants to print WEBCONFIGURED settings, or everything
+                    if generalFilter.upper() in ["-W", "--WEBCONFIGURATOR", "-A", "--ALL"]:
+                        print(structure_whitespace("--WEBCONFIGURATOR", 50, "-", False))
+                        print(structure_whitespace("Theme: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["webguicss"]))
+                        print(structure_whitespace("Top Navigation: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["webguifixedmenu"]))
+                        print(structure_whitespace("Host in Menu: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["webguihostnamemenu"]))
+                        print(structure_whitespace("Dashboard Columns: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["dashboardcolumns"]))
+                        print(structure_whitespace("Sort Interfaces: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["interfacessort"]))
+                        print(structure_whitespace("Show Widgets: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["dashboardavailablewidgetspanel"]))
+                        print(structure_whitespace("Show Log Filter: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["systemlogsfilterpanel"]))
+                        print(structure_whitespace("Show Log Manager: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["systemlogsmanagelogpanel"]))
+                        print(structure_whitespace("Show Monitoring: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["statusmonitoringsettingspanel"]))
+                        print(structure_whitespace("Require State Filter: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["requirestatefilter"]))
+                        print(structure_whitespace("Left Column Labels: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["webguileftcolumnhyper"]))
+                        print(structure_whitespace("Disable Alias Popups: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["disablealiaspopupdetail"]))
+                        print(structure_whitespace("Disable Dragging: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["roworderdragging"]))
+                        print(structure_whitespace("Login Page Color: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["logincss"]))
+                        print(structure_whitespace("Login hostname: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["loginshowhost"]))
+                        print(structure_whitespace("Dashboard refresh: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["dashboardperiod"]))
+                    # If we want to export values as JSON
+                    if generalFilter.startswith(("--json=", "-j=")):
+                        jsonPath = generalFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                        jsonName = "pf-readgeneral-" + currentDate + ".json"    # Assign our default JSON name
+                        # Check if JSON path exists
+                        if os.path.exists(jsonPath):
+                            # Open an export file and save our data
+                            jsonExported = export_json(generalSetupData["general"], jsonPath, jsonName)
+                            # Check if the file now exists
+                            if jsonExported:
+                                print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                            else:
+                                print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # Print error if path does not exist
+                        else:
+                            print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                            sys.exit(1)
+                # If we received a non-zero exit code, print our exit message
+                else:
+                    print(get_exit_message(generalSetupData["ec"], pfsenseServer, pfsenseAction, generalFilter, ""))
+                    sys.exit(generalSetupData["ec"])
+            # Functions and processes for flag --set-system-hostname
+            elif pfsenseAction == "--set-system-hostname":
+                # Print warning prompt if user is using interactive mode
+                if len(sys.argv) < 8:
+                    print(get_exit_message("inter_warn", pfsenseServer, pfsenseAction, "", ""))
+                # Local variables
+                host = filter_input(thirdArg) if len(sys.argv) > 3 else input("Hostname: ")    # Pull our passed in hostname argument or prompt user to input if missing
+                domain = filter_input(fourthArg) if len(sys.argv) > 4 else input("Domain: ")    # Pull our passed in domain argument or prompt user to input if missing
+                user = sixthArg if fifthArg == "-u" and sixthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = eighthArg if seventhArg == "-p" and eighthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                setSysHostEc = set_system_hostname(pfsenseServer, user, key, host, domain)    # Run our function that adds the hostname and save the exit code
+                # Print our exit message and exit on our exit code
+                print(get_exit_message(setSysHostEc, pfsenseServer, pfsenseAction, host, domain))
+                sys.exit(setSysHostEc)
             # Functions and processes for flag --read-adv-admin
             elif pfsenseAction == "--read-adv-admin":
                 advAdmFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string
