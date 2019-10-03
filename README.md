@@ -20,6 +20,16 @@ Syntax
 
 Commands
 ------------
+- `--read-interfaces` : Reads the current interface configuration _Note: at this time, only IPv4 configurations are available for command line display. If you require IPv6 configurations, please use the `--json` argument. This will contain the IPv6 data_
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-interfaces <argument>`
+    - **Arguments**:
+        - `--all` (`-a`,`--all`,`default`,`-d`) : Return all available interface values 
+        - `--iface=<iface_expr>` : Return only interface data for interfaces that starts with a specified expression (e.g. `--iface=igb1`)
+        - `--vlan=<vlan_id>` (`-v`) : Return only interfaces that are associated with a specific VLAN tag (e.g. `--vlan=50`) 
+        - `--name=<name_expr>` (`-n`) : Return only interfaces whose description contains a specified expression (e.g. `--name=FWUPLINK`) 
+        - `--cidr=<cidr_expr>` (`-c`) : Return only interfaces whose CIDR starts with a specified expression (e.g. `--cidr=127.0.0.1`) 
+        - `--json=<directory_path>` : Exports interface data to a JSON file given an existing directory
+        
 - `--add-vlan` : Attempts to add a new VLAN tag to a specified interface
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-vlan <iface> <vlan_id> <priority> <descr>`
     - **Arguments**:

@@ -206,6 +206,18 @@ def get_exit_message(ec, server, command, data1, data2):
             "export_success": "Successfully exported tunable data to " + data1,
             "export_fail": "Failed to export tunable data as JSON"
         },
+        # Error/success messages for --read-interfaces flag
+        "--read-interfaces" : {
+            2 : "Error: Unexpected error reading interface configuration",
+            3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter" : "Error: Invalid filter `" + data1 + "`",
+            "export_err" : "Error: export directory `" + data1 + "` does not exist",
+            "export_success" : "Successfully exported interface data to " + data1,
+            "export_fail" : "Failed to export interface data as JSON"
+        },
         # Error/success messages for --read-vlans flag
         "--read-vlans" : {
             2 : "Error: Unexpected error reading VLAN configuration. You may not have any VLANs configured",
@@ -1411,6 +1423,117 @@ def add_system_tunable(server, user, key, name, descr, value):
         tunableAdded = existingTunables["ec"]    # Return the exit code that was returned by our get_existing_tunables()
     # Return our exit code
     return tunableAdded
+
+# get_interfaces() pulls existing interface configurations from interfaces_assign.php and interfaces.php
+def get_interfaces(server, user, key):
+# Local Variables
+    ifaces = {"ec" : 2, "ifaces" : {}}    # Predefine our dictionary that will track our VLAN data as well as errors
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    # Submit our intitial request and check for errors
+    ifaces["ec"] = 10 if check_dns_rebind_error(url) else ifaces["ec"]    # Return exit code 10 if dns rebind error found
+    ifaces["ec"] = 6 if not validate_platform(url) else ifaces["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if ifaces["ec"] == 2:
+        ifaces["ec"] = 3 if not check_auth(server, user, key) else ifaces["ec"]    # Return exit code 3 if we could not sign in
+    # Check if we did not encountered any errors thus far, continue if not
+    if ifaces["ec"] == 2:
+        getIfData = http_request(url + "/interfaces_assign.php", {}, {}, "GET")    # Pull our interface data using GET HTTP
+        # Check that we have a table body to pull from
+        if "<tbody>" in getIfData["text"]:
+            # Target only HTML data between our tbody tags
+            ifTableBody = getIfData["text"].split("<tbody>")[1].split("</tbody>")[0]    # Save data between tbody tags
+            # Check that we have interface data
+            if "<td><a href=\"/interfaces.php?if" in ifTableBody:
+                tableBodyIfList = ifTableBody.split("<td><a href=\"/interfaces.php?if=")    # Split our tbody into a list of ifaces
+                del tableBodyIfList[0]    # Discard the first value in the last as it saves data listed before our target data
+                pfIfList = []    # Define an empty list to populate our interface names too
+                # Loop through the ifaces and pull the interface name as it's known to pfSense
+                for i in tableBodyIfList:
+                    i = i.split("\"")[0]
+                    pfIfList.append(i)
+                # Request each specific interfaces configuration
+                for pfId in pfIfList:
+                    ifaces["ifaces"][pfId] = {"pf_id" : pfId}    # Initialize a nested dictionary for each interface
+                    # Locate our physical interface ID
+                    ifIdSelect = ifTableBody.split("<td><a href=\"/interfaces.php?if=" + pfId + "\">")[1].split("</select>")[0]    # Target our interface ID options
+                    ifIdOptions = ifIdSelect.split("<option value=\"")    # Split our options into a list
+                    # Loop through our interface IDs to find the selected value
+                    for idOpt in ifIdOptions:
+                        # Check if value is selected
+                        if "selected" in idOpt.split(">")[0]:
+                            ifaces["ifaces"][pfId]["id"] = idOpt.split("\"")[0]    # Save our interface ID
+                            break
+                        # If it is not selected, assume default
+                        else:
+                            ifaces["ifaces"][pfId]["id"] = ""    # Assign default value
+                    # SAVE OUR INTERFACE.PHP HTML INPUT NAMES TO LISTS TO LOOP THROUGH
+                    # Text inputs
+                    valueInputs = [
+                        "descr","spoofmac","mtu","mss","ipaddr","dhcphostname","alias-address","dhcprejectfrom",
+                        "adv_dhcp_pt_timeout","adv_dhcp_pt_retry","adv_dhcp_pt_select_timeout","adv_dhcp_pt_reboot",
+                        "adv_dhcp_pt_backoff_cutoff","adv_dhcp_pt_initial_interval","adv_dhcp_config_file_override_path",
+                        "adv_dhcp_send_options","adv_dhcp_request_options","adv_dhcp_required_options","adv_dhcp_option_modifiers",
+                        "ipaddrv6","adv_dhcp6_interface_statement_send_options","adv_dhcp6_interface_statement_request_options",
+                        "adv_dhcp6_interface_statement_script","adv_dhcp6_id_assoc_statement_address_id","adv_dhcp6_id_assoc_statement_address",
+                        "adv_dhcp6_id_assoc_statement_address_pltime","adv_dhcp6_id_assoc_statement_address_vltime",
+                        "adv_dhcp6_id_assoc_statement_prefix_id","adv_dhcp6_id_assoc_statement_prefix","adv_dhcp6_id_assoc_statement_prefix_pltime",
+                        "adv_dhcp6_id_assoc_statement_prefix_vltime","adv_dhcp6_prefix_interface_statement_sla_id","adv_dhcp6_prefix_interface_statement_sla_len",
+                        "adv_dhcp6_authentication_statement_authname","adv_dhcp6_authentication_statement_protocol","adv_dhcp6_authentication_statement_algorithm",
+                        "adv_dhcp6_authentication_statement_rdm","adv_dhcp6_key_info_statement_keyname","adv_dhcp6_key_info_statement_realm",
+                        "adv_dhcp6_key_info_statement_keyid","adv_dhcp6_key_info_statement_secret","adv_dhcp6_key_info_statement_expire",
+                        "adv_dhcp6_config_file_override_path"
+                    ]
+                    # Checkbox inputs
+                    toggleInputs = [
+                        "enable","blockpriv","blockbogons","adv_dhcp_config_advanced","adv_dhcp_config_file_override",
+                        "ipv6usev4iface","adv_dhcp6_config_advanced","adv_dhcp6_config_file_override","dhcp6usev4iface",
+                        "dhcp6prefixonly","dhcp6-ia-pd-send-hint","dhcp6debug","dhcp6withoutra","dhcp6norelease",
+                        "adv_dhcp6_interface_statement_information_only_enable","adv_dhcp6_id_assoc_statement_address_enable",
+                        "adv_dhcp6_id_assoc_statement_prefix_enable",
+                    ]
+                    # Select inputs
+                    selectInputs = [
+                        "type","type6","mediaopt","subnet","gateway","alias-subnet","subnetv6","gatewayv6","dhcp6-ia-pd-len",
+                        "adv_dhcp6_prefix_selected_interface"
+                    ]
+                    getIfConfig = http_request(url + "/interfaces.php?if=" + pfId, {}, {}, "GET")["text"]    # Get our HTML response
+                    # LOOP AND SAVE OUR TOGGLE/CHKBOX INPUTS
+                    for chk in toggleInputs:
+                        # Check if our interface is enabled
+                        if "name=\"" + chk + "\"" in getIfConfig:
+                            ifaces["ifaces"][pfId][chk] = True if "checked=\"checked\"" in getIfConfig.split("name=\"" + chk + "\"")[1].split("</label>")[0] else False
+                        # Assign default to false
+                        else:
+                            ifaces["ifaces"][pfId][chk] = False
+                    # LOOP AND SAVE OUR VALUE INPUTS
+                    for ipts in valueInputs:
+                        # Check if we have a value for our input
+                        inputTag = getIfConfig.split("name=\"" + ipts + "\"")[1].split(">")[0]
+                        if "name=\"" + ipts + "\"" in getIfConfig and "value=\"" in inputTag:
+                            ifaces["ifaces"][pfId][ipts] = getIfConfig.split("name=\"" + ipts + "\"")[1].split(">")[0].split("value=\"")[1].split("\"")[0]     # Get our value
+                        # If we do not have this option, assign empty string
+                        else:
+                            ifaces["ifaces"][pfId][ipts] = ""    # Assign default as empty string
+                    # LOOP AND SAVE OUR SELECTION INPUTS
+                    for sct in selectInputs:
+                        # If the selection exists
+                        if "name=\"" + sct + "\"" in getIfConfig:
+                             # Loop through our option list and find our currently selected value
+                            optionList = getIfConfig.split("name=\"" + sct + "\"")[1].split("</select>")[0].split("<option value=\"")
+                            for opt in optionList:
+                                # Check if this value is selected
+                                if "selected>" in opt:
+                                    ifaces["ifaces"][pfId][sct] = opt.split("\"")[0]    # Save our value
+                                    break    # Break the loop as we have found our value
+                                else:
+                                    ifaces["ifaces"][pfId][sct] = ""    # Save default value
+                    # Set success exit code
+                    ifaces["ec"] = 0
+        # If we could not parse input
+        else:
+            ifaces["ec"] = 9    # Assign could not parse exit code
+    # Return our data dictionary
+    return ifaces
 
 # get_vlan_ids() pulls existing VLAN configurations from Interfaces > Assignments > VLANs
 def get_vlan_ids(server, user, key):
@@ -2625,6 +2748,100 @@ def main():
                 else:
                     print(get_exit_message(arpTable["ec"], pfsenseServer, pfsenseAction, "", ""))
                     sys.exit(arpTable["ec"])
+            # Assign functions/processes for --read-interfaces
+            elif pfsenseAction == "--read-interfaces":
+                # Action variables
+                ifaceFilter = thirdArg if len(sys.argv) > 3 else "--all"   # Assing a filter argument that we can use to change the returned output
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                supportedFilters = ("--all", "-a", "-d", "default", "-i=","--iface=","-v=","--vlan=","-n=", "--name=", "-c=", "--cidr=")    # Tuple of support filter arguments
+                # Check if our filter input is all or default
+                if ifaceFilter.lower() in supportedFilters or ifaceFilter.startswith(supportedFilters):
+                    ifaceData = get_interfaces(pfsenseServer, user, key)  # Get our data dictionary
+                    # Check that we did not encounter an error
+                    if ifaceData["ec"] == 0:
+                        # Format our header values
+                        headerName = structure_whitespace("NAME", 30, "-", True) + " "    # NAME header
+                        headerIface = structure_whitespace("INTERFACE", 18, "-", True) + " "    # INTERFACE header
+                        headerId = structure_whitespace("ID", 8, "-", True) + " "    # ID header
+                        headerType = structure_whitespace("TYPE", 10, "-", True) + " "    # TYPE header
+                        headerCidr = structure_whitespace("CIDR", 20, "-", True) + " "    # CIDR header
+                        headerEnabled = structure_whitespace("ENABLED", 8, "-", True)    # ENABLED header
+                        header = headerName + headerIface + headerId + headerType + headerCidr + headerEnabled    # Piece our header together
+                        # Loop through our dictionary and print our values
+                        dataTable = header    # Assign a dataTable our loop will populate with data before printing
+                        for pfId,data in ifaceData["ifaces"].items():
+                            # Format and print our values
+                            name = structure_whitespace(data["descr"], 30, " ", True) + " "    # Format our name value
+                            iface = structure_whitespace(data["id"], 18, " ", True) + " "    # Format our iface value
+                            id = structure_whitespace(data["pf_id"], 8, " ", True) + " "    # Format our pf_id value
+                            type = structure_whitespace(data["type"], 10, " ", True) + " "    # Format our IP type
+                            # Check that our type should include a CIDR (static)
+                            if data["type"] == "staticv4":
+                                cidr = structure_whitespace(data["ipaddr"] + "/" + data["subnet"], 20, " ", True) + " "    # Format our CIDR
+                            # Otherwise keep empty
+                            else:
+                                cidr = structure_whitespace("", 20, " ", True) + " "    # Format our CIDR as empty
+                            # Check if our interface is enabled
+                            if data["enable"]:
+                                enabled = structure_whitespace("yes", 8, " ", True)    # Format our enabled value
+                            else:
+                                enabled = structure_whitespace("no", 8, " ", True)    # Format our enabled value
+                            # Add only data that matches iface input from user
+                            if ifaceFilter.startswith(("-i=","--iface=")):
+                                ifaceInput = ifaceFilter.split("=")[1]    # Save our user input from the filter
+                                # If the current interface matches
+                                if data["id"].startswith(ifaceInput):
+                                    dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
+                            # Add only data that matches vlan input from user
+                            elif ifaceFilter.startswith(("-v=","--vlan=")):
+                                vlanInput = ifaceFilter.split("=")[1]    # Save our user input from the filter
+                                # If the current VLAN matches
+                                if data["id"].endswith("." + vlanInput):
+                                    dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
+                            # Add only data that contains name string input from user
+                            elif ifaceFilter.startswith(("-n=","--name=")):
+                                nameInput = ifaceFilter.split("=")[1]    # Save our user input from the filter
+                                # If the current NAME matches
+                                if nameInput in data["descr"]:
+                                    dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
+                            # Add only data that starts with a specified IP or CIDR
+                            elif ifaceFilter.startswith(("-c=","--cidr=")):
+                                cidrInput = ifaceFilter.split("=")[1]    # Save our user input from the filter
+                                # If the current CIDR matches
+                                checkCidr = data["ipaddr"] + "/" + data["subnet"]
+                                if checkCidr.startswith(cidrInput) and checkCidr != "/":
+                                    dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
+                            # Otherwise, write all data
+                            else:
+                                dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
+                        print(dataTable)    # Print our data table
+                    # If we want to export values as JSON
+                    elif ifaceFilter.startswith(("--json=", "-j=")):
+                        jsonPath = ifaceFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                        jsonName = "pf-readifaces-" + currentDate + ".json"    # Assign our default JSON name
+                        # Check if JSON path exists
+                        if os.path.exists(jsonPath):
+                            # Open an export file and save our data
+                            jsonExported = export_json(ifaceData["ifaces"], jsonPath, jsonName)
+                            # Check if the file now exists
+                            if jsonExported:
+                                print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                            else:
+                                print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # Print error if path does not exist
+                        else:
+                            print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                            sys.exit(1)
+                    # If we encountered an error pulling the interface configuration
+                    else:
+                        print(get_exit_message(ifaceData["ec"], pfsenseServer, pfsenseAction, ifaceFilter, ""))
+                        sys.exit(ifaceData["ec"])
+                # If user passed in unknown filter
+                else:
+                    print(get_exit_message("invalid_filter", pfsenseServer, pfsenseAction, ifaceFilter, ""))
+                    sys.exit(1)
             # Assign functions for --add-tunable
             elif pfsenseAction == "--add-tunable":
                 # Action Variables
@@ -2731,7 +2948,7 @@ def main():
                                 print(structure_whitespace("Timeserver" + str(tsCounter) + ": ", 25, " ", False) + ts)    # Print each of our configured timeservers
                                 tsCounter = tsCounter + 1    # Increase our counter
                     # If user wants to print WEBCONFIGURED settings, or everything
-                    if generalFilter.upper() in ["-W", "--WEBCONFIGURATOR", "-A", "--ALL"]:
+                    if generalFilter.upper() in ["-WC", "--WEBCONFIGURATOR", "-A", "--ALL"]:
                         print(structure_whitespace("--WEBCONFIGURATOR", 50, "-", False))
                         print(structure_whitespace("Theme: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["webguicss"]))
                         print(structure_whitespace("Top Navigation: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["webguifixedmenu"]))
