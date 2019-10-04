@@ -30,6 +30,9 @@ Commands
         - `--cidr=<cidr_expr>` (`-c`) : Return only interfaces whose CIDR starts with a specified expression (e.g. `--cidr=127.0.0.1`) 
         - `--json=<directory_path>` : Exports interface data to a JSON file given an existing directory
         
+ `--read-available-interfaces` : Prints interfaces that are available but unused by pfSense
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-available-interfaces`
+
 - `--add-vlan` : Attempts to add a new VLAN tag to a specified interface
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-vlan <iface> <vlan_id> <priority> <descr>`
     - **Arguments**:

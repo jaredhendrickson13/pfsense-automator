@@ -218,6 +218,15 @@ def get_exit_message(ec, server, command, data1, data2):
             "export_success" : "Successfully exported interface data to " + data1,
             "export_fail" : "Failed to export interface data as JSON"
         },
+        # Error/success messages for --read-available-interfaces flag
+        "--read-available-interfaces" : {
+            2 : "Error: Unexpected error reading interface configuration",
+            3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "no_if" : "No interfaces available on `" + server + "`"
+        },
         # Error/success messages for --read-vlans flag
         "--read-vlans" : {
             2 : "Error: Unexpected error reading VLAN configuration. You may not have any VLANs configured",
@@ -1427,7 +1436,7 @@ def add_system_tunable(server, user, key, name, descr, value):
 # get_interfaces() pulls existing interface configurations from interfaces_assign.php and interfaces.php
 def get_interfaces(server, user, key):
 # Local Variables
-    ifaces = {"ec" : 2, "ifaces" : {}}    # Predefine our dictionary that will track our VLAN data as well as errors
+    ifaces = {"ec" : 2, "ifaces" : {}, "if_add" : []}    # Predefine our dictionary that will track our VLAN data as well as errors
     url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
     # Submit our intitial request and check for errors
     ifaces["ec"] = 10 if check_dns_rebind_error(url) else ifaces["ec"]    # Return exit code 10 if dns rebind error found
@@ -1442,6 +1451,15 @@ def get_interfaces(server, user, key):
         if "<tbody>" in getIfData["text"]:
             # Target only HTML data between our tbody tags
             ifTableBody = getIfData["text"].split("<tbody>")[1].split("</tbody>")[0]    # Save data between tbody tags
+            # Determine interfaces that are available but unused
+            if "<select name=\"if_add\"" in ifTableBody:
+                ifAddList = ifTableBody.split("<select name=\"if_add\"")[1].split("</select>")[0].split("<option value=\"")    # Split our response into a list of options
+                # Loop through our options and add available interfaces
+                for ifAddOpt in ifAddList:
+                    ifaces["if_add"].append(ifAddOpt.split("\"")[0])    # Add our option to the list
+                # Check that we have data
+                if len(ifaces["if_add"]) > 0:
+                    del ifaces["if_add"][0]    # Delete the first value as it is not needed
             # Check that we have interface data
             if "<td><a href=\"/interfaces.php?if" in ifTableBody:
                 tableBodyIfList = ifTableBody.split("<td><a href=\"/interfaces.php?if=")    # Split our tbody into a list of ifaces
@@ -2754,94 +2772,120 @@ def main():
                 ifaceFilter = thirdArg if len(sys.argv) > 3 else "--all"   # Assing a filter argument that we can use to change the returned output
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
-                supportedFilters = ("--all", "-a", "-d", "default", "-i=","--iface=","-v=","--vlan=","-n=", "--name=", "-c=", "--cidr=")    # Tuple of support filter arguments
+                supportedFilters = ("--all", "-a", "-d", "default", "-i=","--iface=","-v=","--vlan=","-n=", "--name=", "-c=", "--cidr=", "-j", "--json")    # Tuple of support filter arguments
                 # Check if our filter input is all or default
                 if ifaceFilter.lower() in supportedFilters or ifaceFilter.startswith(supportedFilters):
                     ifaceData = get_interfaces(pfsenseServer, user, key)  # Get our data dictionary
                     # Check that we did not encounter an error
                     if ifaceData["ec"] == 0:
-                        # Format our header values
-                        headerName = structure_whitespace("NAME", 30, "-", True) + " "    # NAME header
-                        headerIface = structure_whitespace("INTERFACE", 18, "-", True) + " "    # INTERFACE header
-                        headerId = structure_whitespace("ID", 8, "-", True) + " "    # ID header
-                        headerType = structure_whitespace("TYPE", 10, "-", True) + " "    # TYPE header
-                        headerCidr = structure_whitespace("CIDR", 20, "-", True) + " "    # CIDR header
-                        headerEnabled = structure_whitespace("ENABLED", 8, "-", True)    # ENABLED header
-                        header = headerName + headerIface + headerId + headerType + headerCidr + headerEnabled    # Piece our header together
-                        # Loop through our dictionary and print our values
-                        dataTable = header    # Assign a dataTable our loop will populate with data before printing
-                        for pfId,data in ifaceData["ifaces"].items():
-                            # Format and print our values
-                            name = structure_whitespace(data["descr"], 30, " ", True) + " "    # Format our name value
-                            iface = structure_whitespace(data["id"], 18, " ", True) + " "    # Format our iface value
-                            id = structure_whitespace(data["pf_id"], 8, " ", True) + " "    # Format our pf_id value
-                            type = structure_whitespace(data["type"], 10, " ", True) + " "    # Format our IP type
-                            # Check that our type should include a CIDR (static)
-                            if data["type"] == "staticv4":
-                                cidr = structure_whitespace(data["ipaddr"] + "/" + data["subnet"], 20, " ", True) + " "    # Format our CIDR
-                            # Otherwise keep empty
+                        # If we want to export values as JSON
+                        if ifaceFilter.startswith(("--json=", "-j=")):
+                            jsonPath = ifaceFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                            jsonName = "pf-readifaces-" + currentDate + ".json"    # Assign our default JSON name
+                            # Check if JSON path exists
+                            if os.path.exists(jsonPath):
+                                # Open an export file and save our data
+                                jsonExported = export_json(ifaceData["ifaces"], jsonPath, jsonName)
+                                # Check if the file now exists
+                                if jsonExported:
+                                    print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                                else:
+                                    print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                    sys.exit(1)
+                            # Print error if path does not exist
                             else:
-                                cidr = structure_whitespace("", 20, " ", True) + " "    # Format our CIDR as empty
-                            # Check if our interface is enabled
-                            if data["enable"]:
-                                enabled = structure_whitespace("yes", 8, " ", True)    # Format our enabled value
-                            else:
-                                enabled = structure_whitespace("no", 8, " ", True)    # Format our enabled value
-                            # Add only data that matches iface input from user
-                            if ifaceFilter.startswith(("-i=","--iface=")):
-                                ifaceInput = ifaceFilter.split("=")[1]    # Save our user input from the filter
-                                # If the current interface matches
-                                if data["id"].startswith(ifaceInput):
-                                    dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
-                            # Add only data that matches vlan input from user
-                            elif ifaceFilter.startswith(("-v=","--vlan=")):
-                                vlanInput = ifaceFilter.split("=")[1]    # Save our user input from the filter
-                                # If the current VLAN matches
-                                if data["id"].endswith("." + vlanInput):
-                                    dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
-                            # Add only data that contains name string input from user
-                            elif ifaceFilter.startswith(("-n=","--name=")):
-                                nameInput = ifaceFilter.split("=")[1]    # Save our user input from the filter
-                                # If the current NAME matches
-                                if nameInput in data["descr"]:
-                                    dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
-                            # Add only data that starts with a specified IP or CIDR
-                            elif ifaceFilter.startswith(("-c=","--cidr=")):
-                                cidrInput = ifaceFilter.split("=")[1]    # Save our user input from the filter
-                                # If the current CIDR matches
-                                checkCidr = data["ipaddr"] + "/" + data["subnet"]
-                                if checkCidr.startswith(cidrInput) and checkCidr != "/":
-                                    dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
-                            # Otherwise, write all data
-                            else:
-                                dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
-                        print(dataTable)    # Print our data table
-                    # If we want to export values as JSON
-                    elif ifaceFilter.startswith(("--json=", "-j=")):
-                        jsonPath = ifaceFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
-                        jsonName = "pf-readifaces-" + currentDate + ".json"    # Assign our default JSON name
-                        # Check if JSON path exists
-                        if os.path.exists(jsonPath):
-                            # Open an export file and save our data
-                            jsonExported = export_json(ifaceData["ifaces"], jsonPath, jsonName)
-                            # Check if the file now exists
-                            if jsonExported:
-                                print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
-                            else:
-                                print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
                                 sys.exit(1)
-                        # Print error if path does not exist
+                        # If user is not requesting JSON, print normally
                         else:
-                            print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
-                            sys.exit(1)
-                    # If we encountered an error pulling the interface configuration
+                            # Format our header values
+                            headerName = structure_whitespace("NAME", 30, "-", True) + " "    # NAME header
+                            headerIface = structure_whitespace("INTERFACE", 18, "-", True) + " "    # INTERFACE header
+                            headerId = structure_whitespace("ID", 8, "-", True) + " "    # ID header
+                            headerType = structure_whitespace("TYPE", 10, "-", True) + " "    # TYPE header
+                            headerCidr = structure_whitespace("CIDR", 20, "-", True) + " "    # CIDR header
+                            headerEnabled = structure_whitespace("ENABLED", 8, "-", True)    # ENABLED header
+                            header = headerName + headerIface + headerId + headerType + headerCidr + headerEnabled    # Piece our header together
+                            # Loop through our dictionary and print our values
+                            dataTable = header    # Assign a dataTable our loop will populate with data before printing
+                            for pfId,data in ifaceData["ifaces"].items():
+                                # Format and print our values
+                                name = structure_whitespace(data["descr"], 30, " ", True) + " "    # Format our name value
+                                iface = structure_whitespace(data["id"], 18, " ", True) + " "    # Format our iface value
+                                id = structure_whitespace(data["pf_id"], 8, " ", True) + " "    # Format our pf_id value
+                                type = structure_whitespace(data["type"], 10, " ", True) + " "    # Format our IP type
+                                # Check that our type should include a CIDR (static)
+                                if data["type"] == "staticv4":
+                                    cidr = structure_whitespace(data["ipaddr"] + "/" + data["subnet"], 20, " ", True) + " "    # Format our CIDR
+                                # Otherwise keep empty
+                                else:
+                                    cidr = structure_whitespace("", 20, " ", True) + " "    # Format our CIDR as empty
+                                # Check if our interface is enabled
+                                if data["enable"]:
+                                    enabled = structure_whitespace("yes", 8, " ", True)    # Format our enabled value
+                                else:
+                                    enabled = structure_whitespace("no", 8, " ", True)    # Format our enabled value
+                                # Add only data that matches iface input from user
+                                if ifaceFilter.startswith(("-i=","--iface=")):
+                                    ifaceInput = ifaceFilter.split("=")[1]    # Save our user input from the filter
+                                    # If the current interface matches
+                                    if data["id"].startswith(ifaceInput):
+                                        dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
+                                # Add only data that matches vlan input from user
+                                elif ifaceFilter.startswith(("-v=","--vlan=")):
+                                    vlanInput = ifaceFilter.split("=")[1]    # Save our user input from the filter
+                                    # If the current VLAN matches
+                                    if data["id"].endswith("." + vlanInput):
+                                        dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
+                                # Add only data that contains name string input from user
+                                elif ifaceFilter.startswith(("-n=","--name=")):
+                                    nameInput = ifaceFilter.split("=")[1]    # Save our user input from the filter
+                                    # If the current NAME matches
+                                    if nameInput in data["descr"]:
+                                        dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
+                                # Add only data that starts with a specified IP or CIDR
+                                elif ifaceFilter.startswith(("-c=","--cidr=")):
+                                    cidrInput = ifaceFilter.split("=")[1]    # Save our user input from the filter
+                                    # If the current CIDR matches
+                                    checkCidr = data["ipaddr"] + "/" + data["subnet"]
+                                    if checkCidr.startswith(cidrInput) and checkCidr != "/":
+                                        dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
+                                # Otherwise, write all data
+                                else:
+                                    dataTable = dataTable + "\n" + name + iface + id + type + cidr + enabled
+                            print(dataTable)    # Print our data table
+                    # If we did receive a 0 exit code
                     else:
-                        print(get_exit_message(ifaceData["ec"], pfsenseServer, pfsenseAction, ifaceFilter, ""))
-                        sys.exit(ifaceData["ec"])
+                        print(get_exit_message(ifaceData["ec"], pfsenseServer, pfsenseAction, ifaceFilter,""))    # Print error msg
+                        sys.exit(ifaceData["ec"])    # Exit on our function exit code
                 # If user passed in unknown filter
                 else:
                     print(get_exit_message("invalid_filter", pfsenseServer, pfsenseAction, ifaceFilter, ""))
                     sys.exit(1)
+                    
+            # Assign functions and processes for --read-available-interfaces
+            elif pfsenseAction == "--read-available-interfaces":
+                # Action variables
+                user = fourthArg if thirdArg == "-u" and fourthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = sixthArg if fifthArg == "-p" and sixthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                availableIf = get_interfaces(pfsenseServer, user, key)    # Save our interface data
+                # Check that we did not encounter errors pulling interface data
+                if availableIf["ec"] == 0:
+                    # Check that we have available interfaces
+                    if len(availableIf["if_add"]) > 0:
+                        # Loop through our available interfaces and print the data
+                        for iface in availableIf["if_add"]:
+                            print(iface)    # Print our interface ID
+                        sys.exit(0)    # Exit on good terms
+                    # If we did not have any available interfaces
+                    else:
+                        print(get_exit_message("no_if", pfsenseServer, pfsenseAction, "", ""))
+                        sys.exit(0)    # Exit on good terms as this is not an error
+                # If we encountered an error pulling our interface data
+                else:
+                    print(get_exit_message(availableIf["ec"], pfsenseServer, pfsenseAction, "", ""))    # Print error msg
+                    sys.exit(availableIf["ec"])    # Exit on our function exit code
+
             # Assign functions for --add-tunable
             elif pfsenseAction == "--add-tunable":
                 # Action Variables
