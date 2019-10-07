@@ -1745,13 +1745,10 @@ def get_dns_entries(server, user, key):
                         aliasFqdn = ip.split("Aliasfor")[1]    # Assign our alias FQDN
                         aliasHost = None   # Declare a variable for our aliases parent hostname
                         aliasDomain = None # Declare a variable for our aliases parent domain name
-                        # Loop through our domains and check if the Fqdn matches a domain
-                        for key,value in dnsDict["domains"].items():
-                            # Check what domain the alias is tied to
-                            if aliasFqdn.endswith(key):
-                                aliasDomain = key
-                                aliasHost = aliasFqdn.replace("." + aliasDomain, "")
-                                break
+                        # Check what domain the alias is tied to
+                        if aliasFqdn.endswith(prevDomain):
+                            aliasDomain = prevDomain
+                            aliasHost = aliasFqdn.replace("." + aliasDomain, "").replace(aliasDomain, "")
                         # If we found our aliases parent domain and host
                         if aliasHost is not None and aliasDomain is not None:
                             dnsDict["domains"][aliasDomain][aliasHost]["alias"][host] = {"hostname" : host, "domain" : domain, "descr" : descr}
@@ -1759,6 +1756,7 @@ def get_dns_entries(server, user, key):
                     else:
                         dnsDict["domains"][domain] = {} if not domain in dnsDict["domains"] else dnsDict["domains"][domain]
                         dnsDict["domains"][domain][host] = {"hostname" : host, "domain" : domain, "ip" : ip, "descr" : descr, "id" : id, "alias" : {}}
+                        prevDomain = domain    # Keep track of our previous domain
                     # Set our exit code to 0
                     dnsDict["ec"] = 0
         # If we did not have permissions to the page
@@ -2265,7 +2263,7 @@ def main():
                                     descr = structure_whitespace(hostValue["descr"], 30, " ", True) + " "    # Format our description data
                                     alias = ""    # Initialize our alias data as empty string. This will populate below if user requested ALL
                                     # Check that user wants all info first
-                                    if dnsFilter.upper() == "--ALL" or dnsFilter.startswith(("--host=","-h=")):
+                                    if dnsFilter.upper() in ("--ALL","-A") or dnsFilter.startswith(("--host=","-h=")):
                                         # Loop through our aliases and try to parse data if it exists
                                         for aliasKey, aliasValue in hostValue["alias"].items():
                                             try:
@@ -2862,7 +2860,7 @@ def main():
                 else:
                     print(get_exit_message("invalid_filter", pfsenseServer, pfsenseAction, ifaceFilter, ""))
                     sys.exit(1)
-                    
+
             # Assign functions and processes for --read-available-interfaces
             elif pfsenseAction == "--read-available-interfaces":
                 # Action variables
@@ -2873,6 +2871,7 @@ def main():
                 if availableIf["ec"] == 0:
                     # Check that we have available interfaces
                     if len(availableIf["if_add"]) > 0:
+                        print("--AVAILABLE INTERFACES-----")
                         # Loop through our available interfaces and print the data
                         for iface in availableIf["if_add"]:
                             print(iface)    # Print our interface ID
