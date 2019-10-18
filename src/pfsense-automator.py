@@ -2824,19 +2824,25 @@ def main():
             # Assign functions/processes for --read-xml
             elif pfsenseAction == "--read-xml":
                 # Action variables
-                xmlFilter = thirdArg    # Save our filter to a variable (this sets function to read or save)
-                xmlArea = filter_input(fourthArg)    # Save our XML backup area
-                xmlArea = "" if xmlArea.lower() == "all" else xmlArea    # Change our CLI area for all into the POST data value (blank string)
+                xmlFilter = thirdArg if len(sys.argv) > 3 else "read"   # Save our filter to a variable (this sets function to read or save)
+                xmlArea = filter_input(fourthArg) if len(sys.argv) > 4 else input("XML Backup Area: ")    # Save our XML backup area
+                xmlAreaPost = "" if xmlArea.lower() == "all" else xmlArea    # Change our CLI area for all into the POST data value (blank string)
                 xmlAreaList = ["","aliases","unbound","filter","interfaces","installedpackages","rrddata","cron","syslog","system","sysctl","snmpd","vlans"]    # Assign a list of supported XML areas
-                xmlPkg = filter_input(fifthArg)    # Save our nopackage toggle (includes or excludes pkg data from backup)
-                xmlRrd = filter_input(sixthArg)    # Save our norrddata toggle (includes or excludes rrd data from backup)
-                xmlEncrypt = filter_input(seventhArg)    # Save our encrypt toggle (enables or disables xml encryption)
-                xmlEncryptPass = eighthArg    # Set an encryption password if encryption is enabled
+                xmlPkg = filter_input(fifthArg) if len(sys.argv) > 5 else input("Include package data in XML [yes, no]: ")   # Save our nopackage toggle (includes or excludes pkg data from backup)
+                xmlRrd = filter_input(sixthArg) if len(sys.argv) > 6 else input("Include RRD data in XML [yes, no]: ")    # Save our norrddata toggle (includes or excludes rrd data from backup)
+                xmlEncrypt = filter_input(seventhArg) if len(sys.argv) > 6 else input("Encrypt XML [yes, no]: ")   # Save our encrypt toggle (enables or disables xml encryption)
+                # Determine how to handle encryption passwords
+                if len(sys.argv) > 8:
+                    xmlEncryptPass = eighthArg     # Set an encryption password if encryption is enabled
+                elif xmlEncrypt in ["encrypt", "yes"]:
+                    xmlEncryptPass = getpass.getpass("Encryption password: ")
+                else:
+                    xmlEncryptPass = ""
                 user = tenthArg if ninthArg == "-u" and tenthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = twelfthArg if eleventhArg == "-p" and twelfthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
                 # INPUT VALIDATION
                 # Check that our XML area is valid
-                if xmlArea.lower() in xmlAreaList:
+                if xmlAreaPost.lower() in xmlAreaList:
                     # Check if user wants to skip package data in the backups
                     if xmlPkg in ["skip","exclude","no"]:
                         xmlPkgPost = True
@@ -2862,7 +2868,7 @@ def main():
                         print(get_exit_message("invalid_encrypt", pfsenseServer, pfsenseAction, xmlEncrypt, ""))
                         sys.exit(1)
                     # Run our function
-                    getXmlData = get_xml_backup(pfsenseServer, user, key, xmlArea, xmlPkgPost, xmlRrdPost, xmlEncryptPost, xmlEncryptPass)
+                    getXmlData = get_xml_backup(pfsenseServer, user, key, xmlAreaPost, xmlPkgPost, xmlRrdPost, xmlEncryptPost, xmlEncryptPass)
                     # Check our exit code
                     if getXmlData["ec"] == 0:
                         # Check how the user wants to display the data
@@ -2880,7 +2886,7 @@ def main():
                                     xwr.write(getXmlData["xml"])    # Write our XML data to a file
                                 # Check if our file exists, if so print success message and exit on zero
                                 if os.path.exists(exportPath + exportName):
-                                    print(get_exit_message("export_success", pfsenseServer, pfsenseAction, exportPath, ""))
+                                    print(get_exit_message("export_success", pfsenseServer, pfsenseAction, exportPath + exportName, ""))
                                     sys.exit(0)
                                 # If our file does not exit, print error and exit on non-zero
                                 else:
