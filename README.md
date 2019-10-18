@@ -161,6 +161,18 @@ Commands
         - `--all` (`-a`) : Return all available ARP table values 
         - `--json=<directory_path>` : Exports ARP data to a JSON file given an existing directory
 
+- `--read-xml` : Reads or exports XML configuration
+- **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-xml <filter> <xml_area> <pkg> <rrd> <encrypt> <encrypt_pass>`
+- **Arguments**:
+    - `<filter>` : Specify either read or export options
+        - `--read` (`read`,`-r`) : Prints XML configuration to the command line
+        - `--export=<directory_path` (`-e`) : Exports the XML configuration to a specified directory path
+    - `<xml_area>` : Define the XML area to include (aliases, unbound, filter, interfaces, installedpackages, rrddata, cron, syslog, system, sysctl, snmpd, vlans)
+    - `<pkg>` : Include or exclude package data in the XML configuration (`include`, `exclude`)
+    - `<rrd>` : Include or exclude RRD data in the XML configuration (`include`, `exclude`)
+    - `<encrypt>` : Enable or disable encrypting the XML data (`encrypt`, `noencrypt`)
+    - `<encrypt_pass>` : Assign an encryption password if encryption is enabled, otherwise specify `none`
+
 - `--add-tunable` : Adds a new system tunable to System > Advanced > System Tunables
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-tunable <tunable_name> <descr> <value>`
     - **Arguments**:

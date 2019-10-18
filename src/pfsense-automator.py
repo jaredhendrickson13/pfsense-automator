@@ -172,17 +172,32 @@ def get_exit_message(ec, server, command, data1, data2):
             21: "Error: Unknown SSH authentication option `" + data1 + "`",
             "invalid_enable": "Error: Unknown enable value `" + data1 + "`",
         },
-        # Error/success messages for --read-vlans flag
+        # Error/success messages for --read-arp flag
         "--read-arp": {
-            2: "Error: Unexpected error reading ARP table",
+            2: "Error: Unexpected error reading XML configuration",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_": "Error: Invalid filter `" + data1 + "`",
+            "export_err": "Error: export directory `" + data1 + "` does not exist",
+            "export_success": "Successfully exported ARP table to " + data1,
+            "export_fail": "Failed to export ARP table as JSON"
+        },
+        # Error/success messages for --read-xml flag
+        "--read-xml": {
+            2: "Error: Unexpected error reading XML configuration",
             3: globalAuthErrMsg,
             6: globalPlatformErrMsg,
             10: globalDnsRebindMsg,
             15: globalPermissionErrMsg,
             "invalid_filter": "Error: Invalid filter `" + data1 + "`",
-            "export_err": "Error: export directory `" + data1 + "` does not exist",
-            "export_success": "Successfully exported ARP table to " + data1,
-            "export_fail": "Failed to export ARP table as JSON"
+            "invalid_area": "Error: invalid XML area `" + data1 + "`",
+            "invalid_pkg": "Error: invalid package option `" + data1 + "`",
+            "invalid_rrd": "Error: invalid RRD option `" + data1 + "`",
+            "invalid_encrypt": "Error: invalid encryption option `" + data1 + "`",
+            "export_success": "Successfully exported XML configuration to " + data1,
+            "export_fail": "Failed to export XML configuration"
         },
         # Error/success messages for --add-tunable flag
         "--add-tunable" : {
@@ -242,11 +257,11 @@ def get_exit_message(ec, server, command, data1, data2):
         # Error/success messages for --add-dns flag
         "--add-dns" : {
             0 : "DNS record was added successfully",
-            1 : "Error: DNS entry for `" + data1 + "." + data2  + "` already exists @" + server,
             2: "Error: Unexpected error adding `" + data1 + "." + data2  + "`",
             3 : globalAuthErrMsg,
             4 : "Error: DNS unreachable at " + server,
             6 : globalPlatformErrMsg,
+            9 : "Error: DNS entry for `" + data1 + "." + data2  + "` already exists @" + server,
             10 : globalDnsRebindMsg,
             15: globalPermissionErrMsg,
             "invalid_ip" : "Error: Invalid IP address",
@@ -1364,6 +1379,45 @@ def get_arp_table(server, user, key):
     # Return our dictionary
     return arpTable
 
+# get_xml_backup() saves pfSense's XML backup given specific parameters
+def get_xml_backup(server, user, key, area, noPkg, noRrd, encrypt, encryptPass):
+    xmlTable = {"ec" : 2}    # Pre-define our function dictionary
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    # Submit our intitial request and check for errors
+    xmlTable["ec"] = 10 if check_dns_rebind_error(url) else xmlTable["ec"]    # Return exit code 10 if dns rebind error found
+    xmlTable["ec"] = 6 if not validate_platform(url) else xmlTable["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if xmlTable["ec"] == 2:
+        xmlTable["ec"] = 3 if not check_auth(server, user, key) else xmlTable["ec"]    # Return exit code 3 if we could not sign in
+    # Check if we encountered any errors before staring
+    if xmlTable["ec"] == 2:
+        # Check that we had permissions for this page
+        getXmlData = http_request(url + "/diag_backup.php", {}, {}, "GET")    # Pull our XML download page using GET HTTP
+        if check_permissions(getXmlData):
+            # Populate our POST data dictionary
+            getXmlPostData = {
+                "__csrf_magic": get_csrf_token(url + "/diag_backup.php", "GET"),
+                "backuparea" : area,
+                "nopackages" : "yes" if noPkg == True else "",
+                "donotbackuprrd" : "yes" if noRrd == True else "",
+                "encrypt" : "yes" if encrypt == True else "",
+                "encrypt_password" : encryptPass if encrypt == True else "",
+                "download" : "Download configuration as XML",
+                "restorearea" : "",
+                "decrypt_password" : ""
+            }
+            # Make our POST request
+            postXmlReq = http_request(url + "/diag_backup.php", getXmlPostData, {}, "POST")
+            xmlTable["xml"] = postXmlReq["text"]    # Save our XML backup to our return dict
+            # Check our POST requests response code
+            if postXmlReq["resp_code"] == 200:
+                xmlTable["ec"] = 0    # Return exit code 0 (success)
+        # If we did not pass our permissions check
+        else:
+            xmlTable["ec"] = 15    # Assign exit code 15 (permissions denied)
+    # Return our dictionary
+    return xmlTable
+
 # get_system_tunables() pulls the System Tunable values from the advanced settings
 def get_system_tunables(server, user, key):
     tunables = {"ec" : 2, "tunables" : {}}    # Pre-define our function dictionary
@@ -1800,7 +1854,7 @@ def add_dns_entry(server, user, key, host, domain, ip, descr):
                 recordAdded = 15    # Return exit code 15 (permission denied)
     # If a DNS record already exists
     else:
-        recordAdded = 1    # Set return value to 1 (1 means record already existed when function started)
+        recordAdded = 9    # Set return value to 9 (9 means record already existed when function started)
     # Return exit code
     return recordAdded
 # get_ssl_certs() pulls the list of existing certificates on a pfSense host. This function basically returns the data found on /system_certmanager.php
@@ -2229,6 +2283,9 @@ def main():
                     descrHead = structure_whitespace("DESCRIPTION", 30, "-", True) + " "    # Format the table header description column
                     # If our DNS configuration is empty
                     if dnsConfig["ec"] == 0:
+                        # If user wants to read the data as JSON
+                        if dnsFilter.startswith("-rj=") or dnsFilter.startswith("--read-json="):
+                            print()
                         # If user wants to export the data as JSON
                         if dnsFilter.startswith("-j=") or dnsFilter.startswith("--json="):
                             jsonPath = dnsFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
@@ -2764,6 +2821,84 @@ def main():
                 else:
                     print(get_exit_message(arpTable["ec"], pfsenseServer, pfsenseAction, "", ""))
                     sys.exit(arpTable["ec"])
+            # Assign functions/processes for --read-xml
+            elif pfsenseAction == "--read-xml":
+                # Action variables
+                xmlFilter = thirdArg    # Save our filter to a variable (this sets function to read or save)
+                xmlArea = filter_input(fourthArg)    # Save our XML backup area
+                xmlArea = "" if xmlArea.lower() == "all" else xmlArea    # Change our CLI area for all into the POST data value (blank string)
+                xmlAreaList = ["","aliases","unbound","filter","interfaces","installedpackages","rrddata","cron","syslog","system","sysctl","snmpd","vlans"]    # Assign a list of supported XML areas
+                xmlPkg = filter_input(fifthArg)    # Save our nopackage toggle (includes or excludes pkg data from backup)
+                xmlRrd = filter_input(sixthArg)    # Save our norrddata toggle (includes or excludes rrd data from backup)
+                xmlEncrypt = filter_input(seventhArg)    # Save our encrypt toggle (enables or disables xml encryption)
+                xmlEncryptPass = eighthArg    # Set an encryption password if encryption is enabled
+                user = tenthArg if ninthArg == "-u" and tenthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = twelfthArg if eleventhArg == "-p" and twelfthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # INPUT VALIDATION
+                # Check that our XML area is valid
+                if xmlArea.lower() in xmlAreaList:
+                    # Check if user wants to skip package data in the backups
+                    if xmlPkg in ["skip","exclude","no"]:
+                        xmlPkgPost = True
+                    elif xmlPkg in ["include","yes"]:
+                        xmlPkgPost = False
+                    else:
+                        print(get_exit_message("invalid_pkg", pfsenseServer, pfsenseAction, xmlRrd, ""))
+                        sys.exit(1)
+                    # Check that our RRD value is valid
+                    if xmlRrd in ["skip","exclude","no"]:
+                        xmlRrdPost = True
+                    elif xmlRrd in ["include","yes"]:
+                        xmlRrdPost = False
+                    else:
+                        print(get_exit_message("invalid_rrd", pfsenseServer, pfsenseAction, xmlRrd, ""))
+                        sys.exit(1)
+                    # Check if user wants to encrypt the XML
+                    if xmlEncrypt in ["encrypt", "yes"]:
+                        xmlEncryptPost = True
+                    elif xmlEncrypt in ["default", "no", "noencrypt"]:
+                        xmlEncryptPost = False
+                    else:
+                        print(get_exit_message("invalid_encrypt", pfsenseServer, pfsenseAction, xmlEncrypt, ""))
+                        sys.exit(1)
+                    # Run our function
+                    getXmlData = get_xml_backup(pfsenseServer, user, key, xmlArea, xmlPkgPost, xmlRrdPost, xmlEncryptPost, xmlEncryptPass)
+                    # Check our exit code
+                    if getXmlData["ec"] == 0:
+                        # Check how the user wants to display the data
+                        if xmlFilter.lower() in ["--read", "-r", "read"]:
+                            print(getXmlData["xml"])
+                            sys.exit(0)
+                        # If user wants to export the XML data to a file
+                        elif xmlFilter.startswith(("--export=","-e=")):
+                            exportPath = xmlFilter.replace("-e=", "").replace("--export=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                            exportName = "pf-xml-" + xmlArea + "-" + currentDate + ".xml"    # Assign our default XML name
+                            # Check if our directory exists
+                            if os.path.exists(exportPath):
+                                # Open our file for writing
+                                with open(exportPath + exportName, "w") as xwr:
+                                    xwr.write(getXmlData["xml"])    # Write our XML data to a file
+                                # Check if our file exists, if so print success message and exit on zero
+                                if os.path.exists(exportPath + exportName):
+                                    print(get_exit_message("export_success", pfsenseServer, pfsenseAction, exportPath, ""))
+                                    sys.exit(0)
+                                # If our file does not exit, print error and exit on non-zero
+                                else:
+                                    print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, "", ""))
+                                    sys.exit(1)
+                        # If our filter is invalid
+                        else:
+                            print(get_exit_message("invalid_filter", pfsenseServer, pfsenseAction, xmlFilter, ""))
+                            sys.exit(1)
+                    # If non-zero exit code, exit script on non-zero with error msg
+                    else:
+                        print(get_exit_message(getXmlData["ec"], pfsenseServer, pfsenseAction, "", ""))
+                        sys.exit(getXmlData["ec"])
+                # If XML area is invalid
+                else:
+                    print(get_exit_message("invalid_area", pfsenseServer, pfsenseAction, xmlArea, ""))
+                    sys.exit(1)
+
             # Assign functions/processes for --read-interfaces
             elif pfsenseAction == "--read-interfaces":
                 # Action variables
