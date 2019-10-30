@@ -1,7 +1,7 @@
 
 pfSense Automator
 =========
-PFSENSE-AUTOMATOR - pfSense Automation command line tool
+PFSENSE-AUTOMATOR - pfSense Automation command line tool<br>
 Copyright 2019 - Jared Hendrickson
 
 Description
@@ -12,11 +12,12 @@ made possible by initiating HTTP POST/GET requests to gather and submit configur
 All security features such as CSRF and syntax checks are left intact and changes appear exactly
 as they would via the WebConfigurator UI
 
-Supported pfSense builds: 2.3.x, 2.4.x, 2.5.x
+Supported pfSense builds: 2.3.x*, 2.4.x, 2.5.x
+<sub><sup>*- pfSense 2.3.x is officially EOL. While many of these commands will function on pfSense 2.3.x, there will be no further development to ensure it's functionality</sup></sub>
 
 Syntax
 ------------
-pfsense-automator can be run either inline (for automation and scriptability) or interactively via command line. If the command's syntax is fulfilled completely, then inline mode is assumed and no input prompts will display. However, if you leave out an argument (you can specify some arguments inline and specify the rest interctively), you will be prompted to input a value for that argument. This is also useful if you cannot remember the syntax for a certain command
+pfsense-automator can be run either inline (for automation and scriptability) or interactively via command line (for added security or assistance). If the command's syntax is fulfilled completely, then inline mode is assumed and no input prompts will display. However, if you leave out an argument (you may specify some arguments inline and specify the rest interctively), you will be prompted to input a value for that argument. This is also useful if you cannot remember the exact syntax for a command
 
 - INLINE SYNTAX
     - `pfsense-automator <pfSense IP or hostname> <COMMAND> <ARGUMENTS> -u <USERNAME> -p <PASSWORD>`
