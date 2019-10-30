@@ -7,20 +7,21 @@
 # and utilizes pfSense's built-in CSRF checks, input validation, and configuration parsing
 # ----------------------------------------------------------------------------------------------------------------
 # IMPORT MODULES
-import platform
 import datetime
-import sys
-import os
 import getpass
-import socket
-import signal
-import requests
-import urllib3
 import json
+import os
+import io
+import platform
+import requests
+import signal
+import socket
+import sys
 import time
+import urllib3
 
 # Variables
-softwareVersion = "v0.0.3 " + platform.system() + "/" + platform.machine()    # Define our current version of this software
+softwareVersion = "v0.0.4 " + platform.system() + "/" + platform.machine()    # Define our current version of this software
 firstArg = sys.argv[1] if len(sys.argv) > 1 else ""    # Declare 'firstArg' to populate the first argument passed in to the script
 secondArg = sys.argv[2] if len(sys.argv) > 2 else ""    # Declare 'secondArg' to populate the second argument passed in to the script
 thirdArg = sys.argv[3] if len(sys.argv) > 3 else None    # Declare 'thirdArg' to populate the third argument passed in to the script
@@ -198,6 +199,27 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_encrypt": "Error: invalid encryption option `" + data1 + "`",
             "export_success": "Successfully exported XML configuration to " + data1,
             "export_fail": "Failed to export XML configuration"
+        },
+        # Error/success messages for --upload-xml flag
+        "--upload-xml" : {
+            0 : "Successfully uploaded XML configuration to restoration area `" + data1 + "`. A reboot may be required.",
+            2 : "Error: Failed to restore XML configuration. Your XML file may be malformed",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filepath" : "Error: No file found at `" + data1 + "`",
+            "invalid_area" : "Error: Invalid restoration area `" + data1 + "`"
+        },
+        # Error/success messages for --replicate-xml flag
+        "--replicate-xml" : {
+            2 : "Error: Unexpected error pulling XML configuration from master `" + server + "`",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_area" : "Error: Invalid restoration area `" + data1 + "`",
+            "invalid_targets" : "Error: Invalid target string `" + data1 + "`"
         },
         # Error/success messages for --add-tunable flag
         "--add-tunable" : {
@@ -377,11 +399,12 @@ def get_exit_message(ec, server, command, data1, data2):
     return exitMessage
 
 # http_request() uses the requests module to make HTTP POST/GET requests
-def http_request(url, data, headers, method):
+def http_request(url, data, headers, files, method):
     # Local Variables
     resp_dict = {}    # Initialize response dictionary to return our response values
     data = {} if type(data) != dict else data
     headers = {} if type(headers) != dict else headers
+    files = {} if type(files) != dict else files
     method_list = ['GET', 'POST']    # Set a list of supported HTTP methods
     # Check that our method is valid
     if method.upper() in method_list:
@@ -399,7 +422,7 @@ def http_request(url, data, headers, method):
         elif method.upper() == "POST":
             # Try to open the connection and gather data
             try:
-                req = req_session.post(url, data=data, headers=headers, verify=False, timeout=45)
+                req = req_session.post(url, data=data, files=files, headers=headers, verify=False, timeout=45)
             except requests.exceptions.ConnectionError:
                 print(get_exit_message("connection", "", "generic", "", ""))
                 sys.exit(1)
@@ -472,7 +495,7 @@ def structure_whitespace(string, length, char, strict_length):
 # validate_platform()
 def validate_platform(url):
     # Local variables
-    htmlStr = http_request(url, {}, {}, "GET")["text"]    # Get our HTML data
+    htmlStr = http_request(url, {}, {}, {}, "GET")["text"]    # Get our HTML data
     platformConfidence = 0    # Assign a integer confidence value
     # List of platform dependent key words to check for
     checkItems = [
@@ -565,7 +588,7 @@ def check_permissions(httpResp):
 # check_dns_rebind_error() checks if access to the webconfigurator is denied due to a DNS rebind error
 def check_dns_rebind_error(url):
     # Local Variables
-    httpResponse = http_request(url, {}, {}, "GET")["text"]    # Get the HTTP response of the URL
+    httpResponse = http_request(url, {}, {}, {}, "GET")["text"]    # Get the HTTP response of the URL
     rebindError = "Potential DNS Rebind attack detected"    # Assigns the error string to look for when DNS rebind error occurs
     rebindFound = False    # Assigns a boolean to track whether a rebind error was found. This is our return value
     # Check the HTTP response code for error message
@@ -580,11 +603,11 @@ def check_auth(server, user, key):
     authSuccess = False    # Set the default return value to false
     url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)   # Assign our base URL
     authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define a dictionary for our login POST data
-    preAuthCheck = http_request(url + "/index.php", {}, {}, "GET")
+    preAuthCheck = http_request(url + "/index.php", {}, {}, {}, "GET")
     # Check that we're not already signed
     if not "class=\"fa fa-sign-out\"" in preAuthCheck["text"]:
         # Complete authentication
-        authCheck = http_request(url + "/index.php", authCheckData, {}, "POST")
+        authCheck = http_request(url + "/index.php", authCheckData, {}, {}, "POST")
         authSuccess = True if not "Username or Password incorrect" in authCheck["text"] and "class=\"fa fa-sign-out\"" in authCheck["text"] else authSuccess    # Return false if login failed
     # Else return true because we are already signed in
     else:
@@ -595,7 +618,7 @@ def check_auth(server, user, key):
 def get_csrf_token(url, type):
         # Local Variables
         csrfTokenLength = 55  # Set the expected token length of the csrf token
-        csrfResponse = http_request(url, None, {}, type)
+        csrfResponse = http_request(url, None, {}, {}, type)
         # Parse CSRF token and conditionalize return value
         if "sid:" in csrfResponse['text']:
             csrfParsed = "sid:" + csrfResponse['text'].split("sid:")[1].split(";")[0].replace(" ", "").replace("\n", "").replace("\"", "")
@@ -627,7 +650,7 @@ def get_general_setup(server, user, key):
     # Check if we encountered any errors before staring
     if general["ec"] == 2:
         # Check that we had permissions for this page
-        getGeneralData = http_request(url + "/system.php", {}, {}, "GET")    # Pull our admin data using GET HTTP
+        getGeneralData = http_request(url + "/system.php", {}, {}, {}, "GET")    # Pull our admin data using GET HTTP
         if check_permissions(getGeneralData):
             # Check that we have a SYSTEM table
             if "<h2 class=\"panel-title\">System</h2>" in getGeneralData["text"]:
@@ -900,7 +923,7 @@ def set_system_hostname(server, user, key, host, domain):
             # Loop pulling our updated config, if DNS rebind is detected try switching the pfSense server to the new hostname
             updateCount = 0    # Assign a loop counter
             while True:
-                postSysHost = http_request(url + "/system.php", sysHostPostData, {}, "POST")    # Run our POST request
+                postSysHost = http_request(url + "/system.php", sysHostPostData, {}, {}, "POST")    # Run our POST request
                 newSysHost = get_general_setup(server, user, key)    # Pull our updated configuration to check against our post data
                 if newSysHost["ec"] == 10:
                     server = sysHostPostData["hostname"] + "." + sysHostPostData["domain"]    # Try to use our new hostname if we experience a DNS rebind
@@ -945,7 +968,7 @@ def get_system_advanced_admin(server, user, key):
     # Check if we encountered any errors before staring
     if advAdm["ec"] == 2:
         # Check that we had permissions for this page
-        getAdvAdmData = http_request(url + "/system_advanced_admin.php", {}, {}, "GET")    # Pull our admin data using GET HTTP
+        getAdvAdmData = http_request(url + "/system_advanced_admin.php", {}, {}, {}, "GET")    # Pull our admin data using GET HTTP
         if check_permissions(getAdvAdmData):
             # Check that we have a webconfigurator table
             if "<h2 class=\"panel-title\">webConfigurator</h2>" in getAdvAdmData["text"]:
@@ -1176,7 +1199,7 @@ def setup_wc(server, user, key, maxProc, redirect, hsts, autoComplete, loginMsg,
         # Check that we did not encounter an error
         if wcConfigured == 2:
             # Use POST HTTP to save our new values
-            postWcConfig = http_request(url + "/system_advanced_admin.php", wcPostData, {'Cache-Control': 'no-cache'}, "POST")    # POST our data
+            postWcConfig = http_request(url + "/system_advanced_admin.php", wcPostData, {'Cache-Control': 'no-cache'}, {}, "POST")    # POST our data
             # Give pfSense time to restart webconfigurator and read our updated configuration to ensure changes were applied
             time.sleep(2)
             updateAdvAdmData = get_system_advanced_admin(server, user, key)    # Update our raw configuration dictionary
@@ -1222,7 +1245,7 @@ def set_wc_port(server, user, key, protocol, port):
             wcPostData["webguiport"] = port
             wcProtocolPort = port    # Update our global wcProtocolPort used by the script
         # POST our request
-        wcPortPost = http_request(url + "/system_advanced_admin.php", wcPostData, {}, "POST")
+        wcPortPost = http_request(url + "/system_advanced_admin.php", wcPostData, {}, {}, "POST")
         time.sleep(2)    # Give our webConfigurator a couple seconds to restart
         # Loop for up to 10 second and check that our port opens
         counter = 0    # Define a loop counter
@@ -1285,7 +1308,7 @@ def setup_ssh(server, user, key, enable, port, auth, forwarding):
         # Check that we did not encounter an error
         if sshConfigured == 2:
             # Use POST HTTP to save our new values
-            postSshConfig = http_request(url + "/system_advanced_admin.php", sshPostData, {}, "POST")    # POST our data
+            postSshConfig = http_request(url + "/system_advanced_admin.php", sshPostData, {}, {}, "POST")    # POST our data
             # Check that our values were updated, assign exit codes accordingly
             newExistingAdvAdm = get_system_advanced_admin_post_data(get_system_advanced_admin(server, user, key)["adv_admin"])    # Get our dictionary of configured advanced options
             # Loop through our POST variables and ensure they match
@@ -1316,7 +1339,7 @@ def setup_console(server, user, key, consolePass):
         consolePostData["disableconsolemenu"] = "yes" if consolePass.upper() in ["ENABLE", "YES"] else ""    # If user wants to password protect console, assign value of yes
         if consoleConfigured == 2:
             # Use POST HTTP to save our new values
-            postConsoleConfig = http_request(url + "/system_advanced_admin.php", consolePostData, {}, "POST")    # POST our data
+            postConsoleConfig = http_request(url + "/system_advanced_admin.php", consolePostData, {}, {}, "POST")    # POST our data
             # Check that our values were updated, assign exit codes accordingly
             updateAdvAdmData = get_system_advanced_admin(server, user, key)    # Update our raw configuration dictionary
             newExistingAdvAdm = get_system_advanced_admin_post_data(updateAdvAdmData["adv_admin"])    # Get our dictionary of configured advanced options
@@ -1348,7 +1371,7 @@ def get_arp_table(server, user, key):
     # Check if we encountered any errors before staring
     if arpTable["ec"] == 2:
         # Check that we had permissions for this page
-        getArpData = http_request(url + "/diag_arp.php", {}, {}, "GET")    # Pull our Interface data using GET HTTP
+        getArpData = http_request(url + "/diag_arp.php", {}, {}, {}, "GET")    # Pull our Interface data using GET HTTP
         if check_permissions(getArpData):
             arpTableBody = getArpData["text"].split("<tbody>")[1].split("</tbody>")[0]  # Find the data table body
             arpTableRows = arpTableBody.replace("\t", "").replace("\n", "").replace("</tr>", "").split("<tr>")  # Find each of our table rows
@@ -1392,7 +1415,7 @@ def get_xml_backup(server, user, key, area, noPkg, noRrd, encrypt, encryptPass):
     # Check if we encountered any errors before staring
     if xmlTable["ec"] == 2:
         # Check that we had permissions for this page
-        getXmlData = http_request(url + "/diag_backup.php", {}, {}, "GET")    # Pull our XML download page using GET HTTP
+        getXmlData = http_request(url + "/diag_backup.php", {}, {}, {}, "GET")    # Pull our XML download page using GET HTTP
         if check_permissions(getXmlData):
             # Populate our POST data dictionary
             getXmlPostData = {
@@ -1407,7 +1430,7 @@ def get_xml_backup(server, user, key, area, noPkg, noRrd, encrypt, encryptPass):
                 "decrypt_password" : ""
             }
             # Make our POST request
-            postXmlReq = http_request(url + "/diag_backup.php", getXmlPostData, {}, "POST")
+            postXmlReq = http_request(url + "/diag_backup.php", getXmlPostData, {}, {}, "POST")
             xmlTable["xml"] = postXmlReq["text"]    # Save our XML backup to our return dict
             # Check our POST requests response code
             if postXmlReq["resp_code"] == 200:
@@ -1417,6 +1440,37 @@ def get_xml_backup(server, user, key, area, noPkg, noRrd, encrypt, encryptPass):
             xmlTable["ec"] = 15    # Assign exit code 15 (permissions denied)
     # Return our dictionary
     return xmlTable
+
+# upload_xml_backup() uploads and restores an existing XML backup configuration
+def upload_xml_backup(server, user, key, area, confFile, decryptPass):
+    # Local Variables
+    xmlAdded = 2  # Assign our default return code. (2 means generic failure)
+    decryptEnable = "yes" if decryptPass != "" else ""    # Determine our decrypt POST value based on user submitting password
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)  # Assign our base URL
+    # Submit our intitial request and check for errors
+    xmlAdded = 10 if check_dns_rebind_error(url) else xmlAdded    # Return exit code 10 if dns rebind error found
+    xmlAdded = 6 if not validate_platform(url) else xmlAdded    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if xmlAdded == 2:
+        xmlAdded = 3 if not check_auth(server, user, key) else xmlAdded   # Return exit code 3 if we could not sign in
+    # Check if we encountered any errors before staring
+    if xmlAdded == 2:
+        # Check that we had permissions for this page
+        getXmlData = http_request(url + "/diag_backup.php", {}, {}, {}, "GET")    # Pull our XML download page using GET HTTP
+        if check_permissions(getXmlData):
+            # Assign our POST data dictionary
+            restoreXmlPostData = {"__csrf_magic": get_csrf_token(url + "/diag_backup.php", "GET"), "restorearea": area, "decrypt": decryptEnable, "decrypt_password": decryptPass, "restore": "Restore Configuration"}
+            # Make our HTTP POST
+            restoreXmlPost = http_request(url + "/diag_backup.php", restoreXmlPostData, {}, confFile, "POST")
+            # Check if our backup was successfully restored
+            successStr = "The configuration area has been restored. The firewall may need to be rebooted."
+            if successStr in restoreXmlPost["text"]:
+                xmlAdded = 0    # Return our success exit code
+        # If we did not have permission to the backup_restore page
+        else:
+            xmlAdded = 15    # Assign exit code 15 if we did not have permission (permission denied)
+    # Return our return code
+    return xmlAdded
 
 # get_system_tunables() pulls the System Tunable values from the advanced settings
 def get_system_tunables(server, user, key):
@@ -1431,7 +1485,7 @@ def get_system_tunables(server, user, key):
     # Check if we encountered any errors before staring
     if tunables["ec"] == 2:
         # Check that we had permissions for this page
-        getTunableData = http_request(url + "/system_advanced_sysctl.php", {}, {}, "GET")    # Pull our Interface data using GET HTTP
+        getTunableData = http_request(url + "/system_advanced_sysctl.php", {}, {}, {}, "GET")    # Pull our Interface data using GET HTTP
         if check_permissions(getTunableData):
             tunableBody = getTunableData["text"].split("<table class")[1].split("</table>")[0]  # Find the data table body
             tunableRows = tunableBody.replace("\t", "").replace("\n", "").replace("</tr>", "").split("<tr>")  # Find each of our table rows
@@ -1469,13 +1523,13 @@ def add_system_tunable(server, user, key, name, descr, value):
         # Check that we did not encounter an error
         if tunableAdded == 2:
             # Use GET HTTP to see what interfaces are available
-            getExistingIfaces = http_request(url + "/system_advanced_sysctl.php?act=edit", {}, {}, "GET")    # Get our HTTP response
+            getExistingIfaces = http_request(url + "/system_advanced_sysctl.php?act=edit", {}, {}, {}, "GET")    # Get our HTTP response
             # Check that we had permissions for this page
             if check_permissions(getExistingIfaces):
                 tunablePostData["__csrf_magic"] = get_csrf_token(url + "/system_advanced_sysctl.php?act=edit", "GET")    # Update our CSRF token
-                postTunable = http_request(url + "/system_advanced_sysctl.php?act=edit", tunablePostData, {}, "POST")    # POST our data
+                postTunable = http_request(url + "/system_advanced_sysctl.php?act=edit", tunablePostData, {}, {}, "POST")    # POST our data
                 applyTunableData = {"__csrf_magic" : get_csrf_token(url + "/system_advanced_sysctl.php", "GET"), "apply" : "Apply Changes"}    # Assign our post data to apply changes
-                applyTunable = http_request(url + "/system_advanced_sysctl.php", applyTunableData, {}, "POST")    # POST our data
+                applyTunable = http_request(url + "/system_advanced_sysctl.php", applyTunableData, {}, {}, "POST")    # POST our data
                 updatedTunables = get_system_tunables(server, user, key)    # Get our updated dictionary of configured tunables
                 tunableAdded = 0 if name in updatedTunables["tunables"] else tunableAdded    # Check that our new value is listed
             # If we didn't have permissions to add the tunable
@@ -1500,7 +1554,7 @@ def get_interfaces(server, user, key):
         ifaces["ec"] = 3 if not check_auth(server, user, key) else ifaces["ec"]    # Return exit code 3 if we could not sign in
     # Check if we did not encountered any errors thus far, continue if not
     if ifaces["ec"] == 2:
-        getIfData = http_request(url + "/interfaces_assign.php", {}, {}, "GET")    # Pull our interface data using GET HTTP
+        getIfData = http_request(url + "/interfaces_assign.php", {}, {}, {}, "GET")    # Pull our interface data using GET HTTP
         # Check that we have a table body to pull from
         if "<tbody>" in getIfData["text"]:
             # Target only HTML data between our tbody tags
@@ -1568,7 +1622,7 @@ def get_interfaces(server, user, key):
                         "type","type6","mediaopt","subnet","gateway","alias-subnet","subnetv6","gatewayv6","dhcp6-ia-pd-len",
                         "adv_dhcp6_prefix_selected_interface"
                     ]
-                    getIfConfig = http_request(url + "/interfaces.php?if=" + pfId, {}, {}, "GET")["text"]    # Get our HTML response
+                    getIfConfig = http_request(url + "/interfaces.php?if=" + pfId, {}, {}, {}, "GET")["text"]    # Get our HTML response
                     # LOOP AND SAVE OUR TOGGLE/CHKBOX INPUTS
                     for chk in toggleInputs:
                         # Check if our interface is enabled
@@ -1620,7 +1674,7 @@ def get_vlan_ids(server, user, key):
         vlans["ec"] = 3 if not check_auth(server, user, key) else vlans["ec"]    # Return exit code 3 if we could not sign in
     # Check if we did not encountered any errors thus far, continue if not
     if vlans["ec"] == 2:
-        getVlanData = http_request(url + "/interfaces_vlan.php", {}, {}, "GET")    # Pull our VLAN data using GET HTTP
+        getVlanData = http_request(url + "/interfaces_vlan.php", {}, {}, {}, "GET")    # Pull our VLAN data using GET HTTP
         # Check that we had permissions for this page
         if check_permissions(getVlanData):
             vlanTableBody = getVlanData["text"].split("<tbody>")[1].split("</tbody>")[0]    # Find the data table body
@@ -1663,7 +1717,7 @@ def add_vlan_id(server, user, key, iface, vlanId, priority, descr):
         # Check that we did not encounter an error
         if vlanAdded == 2:
             # Use GET HTTP to see what interfaces are available
-            getExistingIfaces = http_request(url + "/interfaces_vlan_edit.php", {}, {}, "GET")    # Get our HTTP response
+            getExistingIfaces = http_request(url + "/interfaces_vlan_edit.php", {}, {}, {}, "GET")    # Get our HTTP response
             # Check that we had permissions for this page
             if check_permissions(getExistingIfaces):
                 ifaceSel = getExistingIfaces["text"].split("<select class=\"form-control\" name=\"if\" id=\"if\">")[1].split("</select>")[0]    # Pull iface select tag
@@ -1681,7 +1735,7 @@ def add_vlan_id(server, user, key, iface, vlanId, priority, descr):
                         if iface in ifaceValues:
                             # Update our csrf token and submit our POST request
                             vlanPostData["__csrf_magic"] = get_csrf_token(url + "/interfaces_vlan_edit.php", "GET")
-                            vlanPostReq = http_request(url + "/interfaces_vlan_edit.php", vlanPostData, {}, "POST")
+                            vlanPostReq = http_request(url + "/interfaces_vlan_edit.php", vlanPostData, {}, {}, "POST")
                             # Check that our new value is now configured
                             vlanCheck = get_vlan_ids(server, user, key)
                             # Loop through existing VLAN and check for our value
@@ -1750,11 +1804,11 @@ def add_auth_server_ldap(server, user, key, descrName, ldapServer, ldapPort, tra
     # Check that no errors have occurred so far (should be at 2)
     if ldapAdded == 2:
         # Check that we have permission to these pages before proceeding
-        addAuthPermissions = http_request(url + "/system_authservers.php?act=new", {}, {}, "GET")
+        addAuthPermissions = http_request(url + "/system_authservers.php?act=new", {}, {}, {}, "GET")
         if check_permissions(addAuthPermissions):
             # Update our CSRF token and submit our POST request
             addAuthServerData["__csrf_magic"] = get_csrf_token(url + "/system_authservers.php?act=new", "GET")
-            addAuthServer = http_request(url + "/system_authservers.php?act=new", addAuthServerData, {}, "POST")
+            addAuthServer = http_request(url + "/system_authservers.php?act=new", addAuthServerData, {}, {}, "POST")
             ldapAdded = 0
         # If we did not have permissions to the page
         else:
@@ -1775,7 +1829,7 @@ def get_dns_entries(server, user, key):
     # Check that login was successful
     if dnsDict["ec"] == 2:
         # Check that we have access to these pages before proceeding
-        getDnsResp = http_request(url + "/services_unbound.php", {}, {}, "GET")
+        getDnsResp = http_request(url + "/services_unbound.php", {}, {}, {}, "GET")
         if check_permissions(getDnsResp):  # Check that we had permissions for this page
             # Pull our DNS entries
             dnsBody = getDnsResp["text"].split("<tbody>")[1].split("</tbody>")[0]
@@ -1837,15 +1891,15 @@ def add_dns_entry(server, user, key, host, domain, ip, descr):
         # Check that no errors have occurred so far (should be at 2)
         if recordAdded == 2:
             # Check we have permissions to the pages
-            dnsReadPermissions = http_request(url + "/services_unbound.php", {}, {}, "GET")
-            dnsAddPermissions = http_request(url + "/services_unbound_host_edit.php", {}, {}, "GET")
+            dnsReadPermissions = http_request(url + "/services_unbound.php", {}, {}, {}, "GET")
+            dnsAddPermissions = http_request(url + "/services_unbound_host_edit.php", {}, {}, {}, "GET")
             if check_permissions(dnsAddPermissions) and check_permissions(dnsReadPermissions):
                 # Update our CSRF token and add our DNS entry
                 dnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound_host_edit.php", "GET")
-                dnsCheck = http_request(url + "/services_unbound_host_edit.php", dnsData, {}, "POST")
+                dnsCheck = http_request(url + "/services_unbound_host_edit.php", dnsData, {}, {}, "POST")
                 # Update our CSRF token and save changes
                 saveDnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound.php", "GET")
-                saveCheck = http_request(url + "/services_unbound.php", saveDnsData, {}, "POST")
+                saveCheck = http_request(url + "/services_unbound.php", saveDnsData, {}, {}, "POST")
                 # Check if a record is now present
                 if check_dns(server, user, key, host, domain):
                     recordAdded = 0    # Set return variable 0 (0 means successfully added)
@@ -1857,6 +1911,34 @@ def add_dns_entry(server, user, key, host, domain, ip, descr):
         recordAdded = 9    # Set return value to 9 (9 means record already existed when function started)
     # Return exit code
     return recordAdded
+
+# replicate_xml() copies the XML configuration from one pfSense box to another
+def replicate_xml(server, user, key, area, targetList):
+    # Local variables
+    replicateDict = {"ec" : 2, "targets" : {}}     # Initialize certManagerDict to return our certificate values and exit codes
+    masterConfig = get_xml_backup(server, user, key, area, False, False, True, currentDate)    # Get our XML configuration and save it to a variable
+    # Check that our master config was pulled successfully before continuing
+    if masterConfig["ec"] == 0:
+        # Loop through our target list and start to replicate configuration
+        counter = 0    # Set a counter to track loop iteration
+        for tg in targetList:
+            xmlObj = io.StringIO(masterConfig["xml"])
+            masterConfigBinary = {"conffile": xmlObj}   # Convert our string to a encoded obj and save it to our POST dictionary
+            replicateDict["targets"][counter] = {}    # Create a target dictionary entry
+            targetUpload = upload_xml_backup(tg, user, key, area, masterConfigBinary, currentDate)    # Run our function and capture the exit code
+            xmlObj.close()    # Close our object now that it is no longer needed
+            replicateDict["targets"][counter]["host"] = tg    # Save our target hostname/IP to dictionary
+            replicateDict["targets"][counter]["ec"] = targetUpload    # Save our function exit code to dictionary
+            replicateDict["targets"][counter]["replicated"] = True if targetUpload == 0 else False    # Assign a bool value stating whether replication was successful
+            counter = counter + 1   # Increase our counter
+        # Return success exit code as we have populated our dictionary
+        replicateDict["ec"] = 0
+    # If we could not pull the master configuration
+    else:
+        replicateDict["ec"] = masterConfig["ec"]    # Save exit code from the failed function
+    # Return our dictionary
+    return replicateDict
+
 # get_ssl_certs() pulls the list of existing certificates on a pfSense host. This function basically returns the data found on /system_certmanager.php
 def get_ssl_certs(server, user, key):
     # Local Variables
@@ -1871,7 +1953,7 @@ def get_ssl_certs(server, user, key):
         certManagerDict["ec"] = 3 if not check_auth(server, user, key) else certManagerDict["ec"]    # Return exit code 3 if we could not sign in
     if certManagerDict["ec"] == 2:
         # Check that we had permissions for this page
-        getCertData = http_request(url + "/system_certmanager.php", {}, {}, "GET")
+        getCertData = http_request(url + "/system_certmanager.php", {}, {}, {}, "GET")
         if check_permissions(getCertData):
             # Parse our output
             certRowList = getCertData['text'].split("<tbody>")[1].split("</tbody>")[0].split("<tr>")
@@ -1976,11 +2058,11 @@ def add_ssl_cert(server, user, key, cert, certkey, descr):
     # Only proceed if an error has not occurred
     if certAdded == 2:
         # Check our permissions
-        permissionCheck = http_request(url + "/system_certmanager.php?act=new", {}, {}, "GET")
+        permissionCheck = http_request(url + "/system_certmanager.php?act=new", {}, {}, {}, "GET")
         if check_permissions(permissionCheck):
             # Add SSL cert and check for the added cert afterwards
             addCertData["__csrf_magic"] = get_csrf_token(url + "/system_certmanager.php?act=new", "GET")
-            postCheck = http_request(url + "/system_certmanager.php?act=new", addCertData, {}, "POST")
+            postCheck = http_request(url + "/system_certmanager.php?act=new", addCertData, {}, {}, "POST")
             postCertDict = get_ssl_certs(server, user, key)  # Get the current dict of certificate installed on pfSense
             postCertDictLen = len(postCertDict["certs"])  # Track the length of existing certificates in the dict
             # Check if the dict increased in size by one when we added a new certificate
@@ -2013,7 +2095,7 @@ def set_wc_certificate(server, user, key, certName):
     # Check that authentication was successful
     if wccCheck == 2:
         # Check that we have permissions to this page first
-        getSysAdvAdm = http_request(url + "/system_advanced_admin.php", {}, {}, "GET")
+        getSysAdvAdm = http_request(url + "/system_advanced_admin.php", {}, {}, {}, "GET")
         if check_permissions(getSysAdvAdm):
             # Make GET request to /system_advanced_admin.php to check response, split the response and target the SSL cert selection HTML field
             getSysAdvAdmList = getSysAdvAdm["text"].split("<select class=\"form-control\" name=\"ssl-certref\" id=\"ssl-certref\">")[1].split("</select>")[0].split("<option value=")
@@ -2065,8 +2147,8 @@ def set_wc_certificate(server, user, key, certName):
                     # Update our CSRF, certref, and take our POST request and save a new GET request that should show our new configuration
                     wccData["__csrf_magic"] = get_csrf_token(url + "/system_advanced_admin.php", "GET")
                     wccData["ssl-certref"] = newWcc
-                    postSysAdvAdm = http_request(url + "/system_advanced_admin.php", wccData, {}, "POST")
-                    checkSysAdvAdm = http_request(url + "/system_advanced_admin.php", {}, {}, "GET")["text"]
+                    postSysAdvAdm = http_request(url + "/system_advanced_admin.php", wccData, {}, {}, "POST")
+                    checkSysAdvAdm = http_request(url + "/system_advanced_admin.php", {}, {}, {}, "GET")["text"]
                     checkSysAdvAdm = checkSysAdvAdm.split("<select class=\"form-control\" name=\"ssl-certref\" id=\"ssl-certref\">")[1].split("</select>")[0].split("<option value=")
                     # Parse the new GET response to a list of HTML selection options
                     for wcc in checkSysAdvAdm:
@@ -2106,8 +2188,8 @@ def get_firewall_aliases(server, user, key):
     # Check that authentication succeeded
     if aliases["ec"] == 2:
         # Check that we had permissions for this page
-        getAliasIds = http_request(url + "/firewall_aliases.php?tab=all", {}, {}, "GET")    # Save our GET HTTP response
-        getAliasEdit = http_request(url + "/firewall_aliases_edit.php", {}, {}, "GET")  # Save our GET HTTP response
+        getAliasIds = http_request(url + "/firewall_aliases.php?tab=all", {}, {}, {}, "GET")    # Save our GET HTTP response
+        getAliasEdit = http_request(url + "/firewall_aliases_edit.php", {}, {}, {}, "GET")  # Save our GET HTTP response
         if check_permissions(getAliasIds) and check_permissions(getAliasEdit):
             # GET aliases IDs from /firewall_aliases.php
             aliasIdTableBody = getAliasIds["text"].split("<tbody>")[1].split("</tbody>")[0]    # Pull the table body data from HTML response
@@ -2121,7 +2203,7 @@ def get_firewall_aliases(server, user, key):
                     idList.append(id)    # Add our current ID to the list
             # Loop through alias IDs and save values to our dictionary
             for i in idList:
-                getAliasIdInfo = http_request(url + "/firewall_aliases_edit.php?id=" + i, {}, {}, "GET")    # Save our GET HTTP response
+                getAliasIdInfo = http_request(url + "/firewall_aliases_edit.php?id=" + i, {}, {}, {}, "GET")    # Save our GET HTTP response
                 check_permissions(getAliasIdInfo)  # Check that we had permissions for this page
                 name = getAliasIdInfo["text"].split("<input class=\"form-control\" name=\"name\" id=\"name\" type=\"text\" value=\"")[1].split("\"")[0]    # Save our alias name
                 descr = getAliasIdInfo["text"].split("<input class=\"form-control\" name=\"descr\" id=\"descr\" type=\"text\" value=\"")[1].split("\"")[0]    # Save our alias description
@@ -2196,12 +2278,12 @@ def modify_firewall_alias(server, user, key, aliasName, newValues):
             # Make our post request if no errors were encountered
             if aliasModded == 2:
                 # Check that we have permissions to run
-                postPfAliasData = http_request(url + "/firewall_aliases_edit.php", {}, {}, "GET")
+                postPfAliasData = http_request(url + "/firewall_aliases_edit.php", {}, {}, {}, "GET")
                 if check_permissions(postPfAliasData):
                     # Submit our post requests
-                    postPfAliasData = http_request(url + "/firewall_aliases_edit.php", aliasPostData, {}, "POST")
+                    postPfAliasData = http_request(url + "/firewall_aliases_edit.php", aliasPostData, {}, {}, "POST")
                     saveChangesPostData = {"__csrf_magic" : get_csrf_token(wcProtocol + "://" + server + "/firewall_aliases.php", "GET"), "apply" : "Apply Changes"}
-                    saveChanges = http_request(url + "/firewall_aliases.php", saveChangesPostData, {}, "POST")
+                    saveChanges = http_request(url + "/firewall_aliases.php", saveChangesPostData, {}, {}, "POST")
                     aliasModded = 0    # Assign our success exit code
                 # If we did not have permissions to the page
                 else:
@@ -2905,10 +2987,122 @@ def main():
                     print(get_exit_message("invalid_area", pfsenseServer, pfsenseAction, xmlArea, ""))
                     sys.exit(1)
 
+            # Assign functions/processes for --upload-xml
+            elif pfsenseAction == "--upload-xml":
+                # Action variables
+                restoreAreas = ["", "aliases", "captiveportal", "voucher", "dnsmasq", "unbound", "dhcpd", "dhcpdv6",
+                                "filter", "interfaces", "ipsec", "nat", "openvpn", "installedpackages", "rrddata",
+                                "cron", "syslog", "system", "staticroutes", "sysctl", "snmpd", "shaper", "vlans", "wol"]    # Assign a list of supported restore areas
+                restoreAreaRaw = filter_input(thirdArg) if len(sys.argv) > 3 else input("Restore area: ")    # Get our restore area input from user either in line or prompt
+                confFilePath = fourthArg if len(sys.argv) > 4 else input("XML file: ")    # Get our XML file path from user either in line or prompt
+                decryptPassRaw = fifthArg if len(sys.argv) > 5 else getpass.getpass("Decryption password: ")    # Get our decryption password in line or prompt
+                user = seventhArg if sixthArg == "-u" and seventhArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = ninthArg if eighthArg == "-p" and ninthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # INPUT VALIDATION
+                restoreArea = "" if restoreAreaRaw.lower() in ["all", "default", "any"] else restoreAreaRaw    # Format our restore area to match expect POST values
+                decryptPass = "" if decryptPassRaw.lower() in ["none", "default"] else decryptPassRaw    # Format our decryption password to revert to blank on expected keywords
+                # Check that our restore area is valid
+                if restoreArea in restoreAreas:
+                    # Check that our XML file exists
+                    if os.path.exists(confFilePath):
+                        xmlFileObj = {"conffile" : open(confFilePath, "rb")}    # Open our file and embed our file object in a dict to POST to pfSense
+                        # Validation has passed at this point, run our post command
+                        uploadXml = upload_xml_backup(pfsenseServer, user, key, restoreArea, xmlFileObj, decryptPass)    # Run function and save exit code
+                        # Print our exit message and exit on exit code
+                        print(get_exit_message(uploadXml, pfsenseServer, pfsenseAction, restoreArea, ""))
+                        sys.exit(uploadXml)
+                    # If our XML file does not exist
+                    else:
+                        print(get_exit_message("invalid_filepath", pfsenseServer, pfsenseAction, confFilePath, ""))
+                        sys.exit(1)
+                # If user passed in an unexpected restore area
+                else:
+                    print(get_exit_message("invalid_area", pfsenseServer, pfsenseAction, restoreAreaRaw, ""))
+                    sys.exit(1)
+
+            # Assign functions/processes for --replicate-xml
+            elif pfsenseAction == "--replicate-xml":
+                # Action variables
+                xmlAreaList = ["","aliases","unbound","filter","interfaces","installedpackages","rrddata","cron","syslog","system","sysctl","snmpd","vlans"]    # Assign a list of supported XML areas
+                maxTargets = 100    # Only allow a specied number of replication targets
+                replicationArea = filter_input(thirdArg) if len(sys.argv) > 3 else input("XML area: ")    # Assign user input for XML area to be replicated
+                replicationTargets = "," + fourthArg if len(sys.argv) > 4 else ","   # Assign user input for hosts to apply configuration to (comma seperated)
+                # If user requested interactive mode
+                if replicationTargets == ",":
+                    # Create a loop prompting user to add hosts to replicate XML to
+                    counter = 1    # Create a counter to track loop iteration
+                    while True:
+                        inputMsg = "Replication target " + str(counter) + ": " if counter == 1 else "Replication target " + str(counter) + " [leave blank if done]: "    # Conditionally format input prompt
+                        hostInput = input(inputMsg)    # Prompt user for host input
+                        # Check that user wants to stop inputting
+                        if hostInput == "":
+                            replicationTargets.rstrip(",")    # Remove last comma to prevent orphan list item later
+                            break    # Break loop
+                        # Check if we have maxed out the number of replication targets
+                        elif counter > maxTargets:
+                            replicationTargets = replicationTargets + hostInput    # Add the entry as the final entry
+                            break    # Break loop
+                        # Assume user wants to continue adding hosts
+                        else:
+                            replicationTargets = replicationTargets + hostInput + ","    # Populate our replication string
+                            counter = counter + 1    # Increase our counter
+                # Get our username and password. This must match ALL systems (master and targets)
+                user = sixthArg if fifthArg == "-u" and sixthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = eighthArg if seventhArg == "-p" and eighthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # INPUT VALIDATION
+                if replicationArea in xmlAreaList:
+                    if "," in replicationTargets:
+                        targetList = replicationTargets.replace(" ", "").split(",")    # Save our target list
+                        # Loop through targets and remove blank values
+                        counter = 0    # Create a counter to track loop iteration
+                        for tg in targetList:
+                            # Remove item if it is blank
+                            if tg == "":
+                                del targetList[counter]
+                            # Increase our counter
+                            counter = counter + 1
+                        # Run our replication function and print results
+                        replicationEc = replicate_xml(pfsenseServer, user, key, replicationArea, targetList)
+                        # Check if our function succeeded
+                        if replicationEc["ec"] == 0:
+                            # Define a dictionary with predefined result values
+                            statusDict = {
+                                0: {"status": "SUCCESS", "reason": "XML area `" + replicationArea + "` was replicated"},
+                                2: {"status": "FAILED", "reason": "replication unexpectedly failed"},
+                                3: {"status": "FAILED", "reason": "authentication failure"},
+                                6: {"status": "FAILED", "reason": "non-pfSense platform identified"},
+                                10: {"status": "FAILED", "reason": "DNS rebind detected"},
+                                15: {"status": "FAILED", "reason": "permission denied"},
+                            }
+                            hostHeader = structure_whitespace("HOST", 30, "-", True) + " "   # Format our HOST header
+                            statusHeader = structure_whitespace("STATUS", 8, "-", True) + " "   # Format our STATUS header
+                            infoHeader = structure_whitespace("INFO", 40, "-", True) + " "   # Format our INFO header
+                            print(hostHeader + statusHeader + infoHeader)    # Format our header
+                            # Loop through our target result and print them
+                            for list,item in replicationEc["targets"].items():
+                                hostData = structure_whitespace(item["host"], 30, " ", True) + " "    # Format our HOST data
+                                statusData = structure_whitespace(statusDict[item["ec"]]["status"], 8, " ", True) + " "    # Format our STATUS data
+                                infoData = structure_whitespace(statusDict[item["ec"]]["reason"], 40, " ", True) + " "    # Format our INFO data
+                                print(hostData + statusData + infoData)    # Print our data
+                            # Exit on zero (success)
+                            sys.exit(replicationEc["ec"])
+                        # If we could not pull the master configuration
+                        else:
+                            print(get_exit_message(replicationEc["ec"], pfsenseServer, pfsenseAction, "", ""))
+                            sys.exit(replicationEc["ec"])
+                    # If our replication target seperator is not found, print error message and exit on non-zero code
+                    else:
+                        print(get_exit_message("invalid_targets", pfsenseServer, pfsenseAction, replicationTargets, ""))
+                        sys.exit(1)
+                # If our requested area does not exist, print error message and exit on non-zero code
+                else:
+                    print(get_exit_message("invalid_area", pfsenseServer, pfsenseAction, replicationArea, ""))
+                    sys.exit(1)
+
             # Assign functions/processes for --read-interfaces
             elif pfsenseAction == "--read-interfaces":
                 # Action variables
-                ifaceFilter = thirdArg if len(sys.argv) > 3 else "--all"   # Assing a filter argument that we can use to change the returned output
+                ifaceFilter = thirdArg if len(sys.argv) > 3 else "--all"   # Assign a filter argument that we can use to change the returned output
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
                 supportedFilters = ("--all", "-a", "-d", "default", "-i=","--iface=","-v=","--vlan=","-n=", "--name=", "-c=", "--cidr=", "-j", "--json")    # Tuple of support filter arguments

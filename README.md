@@ -162,16 +162,53 @@ Commands
         - `--json=<directory_path>` : Exports ARP data to a JSON file given an existing directory
 
 - `--read-xml` : Reads or exports XML configuration
-- **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-xml <filter> <xml_area> <pkg> <rrd> <encrypt> <encrypt_pass>`
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-xml <filter> <xml_area> <pkg> <rrd> <encrypt> <encrypt_pass>`
+    - **Arguments**:
+      - `<filter>` : Specify either read or export options
+            - `--read` (`read`,`-r`) : Prints XML configuration to the command line
+            - `--export=<directory_path` (`-e`) : Exports the XML configuration to a specified directory path
+      - `<xml_area>` : Define the XML area to include (aliases, unbound, filter, interfaces, installedpackages, rrddata, cron, syslog, system, sysctl, snmpd, vlans)
+      - `<pkg>` : Include or exclude package data in the XML configuration (`include`, `exclude`)
+      - `<rrd>` : Include or exclude RRD data in the XML configuration (`include`, `exclude`)
+      - `<encrypt>` : Enable or disable encrypting the XML data (`encrypt`, `noencrypt`)
+      - `<encrypt_pass>` : Assign an encryption password if encryption is enabled, otherwise specify `none`
+
+- `--upload-xml` : Restore configuration using an existing XML configuration file
+  - **Syntax**: `pfsense-automator <pfSense IP or hostname> --upload-xml <xml_area> <xml_filepath> <decrypt_pass>`
+  - **Arguments**:
+      -  `<xml_area>`: Specify the configuration area to restore
+            - `all`: Restore entire XML configuration
+            - `aliases`: Restore only firewall aliases
+            - `captiveportal`: Restore captive portal configurations
+            - `voucher`: Restore captive portal vouchers
+            - `dnmasq`: Restore DNS Forwarder configuration only
+            - `unbound`: Restore DNS Resolver configuration only
+            - `dhcpd`: Restore DHCP configuration only
+            - `dhcpdv6`: Restore DHCP (IPv6) configuration only
+            - `filter`: Restore Firewall configuration only
+            - `interfaces`: Restore Interface configuration only
+            - `ipsec`: Restore IPsec configuration only
+            - `nat`: Restore NAT configuration only
+            - `OpenVPN`: Restore OpenVPN configuration only
+            - `installedpackages`: Restore installed packages only
+            - `rrddata`: Restore RRD graph data only
+            - `cron`: Restore Cron configuration only
+            - `syslog`: Restore Syslog configuration only
+            - `system`: Restore System settings only
+            - `staticroutes`: Restore Static Route configuration only
+            - `sysctl`: Restore sysctl configuration only
+            - `snmpd`: Restore SNMP configuration only
+            - `shaper`: Restore Traffic Shaper configuration only
+            - `vlans`: Restore VLAN configurations only
+            - `wol`: Restore Wake-On-LAN configuration only
+      - `<xml_filepath>`: Specify a valid file path to the existing XML configuration file
+      - `<decrypt_pass>`: Specify the decryption password for encrypted XML configurations, if not encrypted use `none`
+
+- `--replicate-xml` : Replicate XML configurations to one or more pfSense systems. This replicates the XML configuration from the `<pfSense IP or hostname>` to the `<replication_targets>` shown in the syntax secion below. _Note: credentials, protocol, and port on all pfSense servers must match to replicate configuration_
+- **Syntax**: `pfsense-automator <pfSense IP or hostname> --replicate-xml <xml_area> <replication_targets>`
 - **Arguments**:
-    - `<filter>` : Specify either read or export options
-        - `--read` (`read`,`-r`) : Prints XML configuration to the command line
-        - `--export=<directory_path` (`-e`) : Exports the XML configuration to a specified directory path
-    - `<xml_area>` : Define the XML area to include (aliases, unbound, filter, interfaces, installedpackages, rrddata, cron, syslog, system, sysctl, snmpd, vlans)
-    - `<pkg>` : Include or exclude package data in the XML configuration (`include`, `exclude`)
-    - `<rrd>` : Include or exclude RRD data in the XML configuration (`include`, `exclude`)
-    - `<encrypt>` : Enable or disable encrypting the XML data (`encrypt`, `noencrypt`)
-    - `<encrypt_pass>` : Assign an encryption password if encryption is enabled, otherwise specify `none`
+  - `<xml_area>` : Specify the XML area to replicate (aliases, unbound, filter, interfaces, installedpackages, rrddata, cron, syslog, system, sysctl, snmpd, vlans)
+  - `<replication_targets>` : Specify hostname/IPs of pfSense systems to replicate the configuration to (multiple entries must be comma separated or added interactively)
 
 - `--add-tunable` : Adds a new system tunable to System > Advanced > System Tunables
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-tunable <tunable_name> <descr> <value>`
