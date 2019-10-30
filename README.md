@@ -16,7 +16,13 @@ Supported pfSense builds: 2.3.x, 2.4.x, 2.5.x
 
 Syntax
 ------------
-- `pfsense-automator <pfSense IP or hostname> <COMMAND> <ARGUMENTS> -u <USERNAME> -p <PASSWORD>`
+pfsense-automator can be run either inline (for automation and scriptability) or interactively via command line. If the command's syntax is fulfilled completely, then inline mode is assumed and no input prompts will display. However, if you leave out an argument (you can specify some arguments inline and specify the rest interctively), you will be prompted to input a value for that argument. This is also useful if you cannot remember the syntax for a certain command
+
+- INLINE SYNTAX
+    - `pfsense-automator <pfSense IP or hostname> <COMMAND> <ARGUMENTS> -u <USERNAME> -p <PASSWORD>`
+- INTERACTIVE SYNTAX
+    - `pfsense-automator <pfSense IP or hostname> <COMMAND>` 
+
 
 Commands
 ------------
