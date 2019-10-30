@@ -208,30 +208,30 @@ Commands
 - **Syntax**: `pfsense-automator <pfSense IP or hostname> --replicate-xml <xml_area> <replication_targets>`
 - **Arguments**:
     - `<xml_area>` : Specify the XML area to replicate (aliases, unbound, filter, interfaces, installedpackages, rrddata, cron, syslog, system, sysctl, snmpd, vlans)
-            - `all`: Replicate entire XML configuration
-            - `aliases`: Replicate only firewall aliases
-            - `captiveportal`: Replicate captive portal configurations
-            - `voucher`: Replicate captive portal vouchers
-            - `dnmasq`: Replicate DNS Forwarder configuration only
-            - `unbound`: Replicate DNS Resolver configuration only
-            - `dhcpd`: Replicate DHCP configuration only
-            - `dhcpdv6`: Replicate DHCP (IPv6) configuration only
-            - `filter`: Replicate Firewall configuration only
-            - `interfaces`: Replicate Interface configuration only
-            - `ipsec`: Replicate IPsec configuration only
-            - `nat`: Replicate NAT configuration only
-            - `OpenVPN`: Replicate OpenVPN configuration only
-            - `installedpackages`: Replicate installed packages only
-            - `rrddata`: Replicate RRD graph data only
-            - `cron`: Replicate Cron configuration only
-            - `syslog`: Replicate Syslog configuration only
-            - `system`: Replicate System settings only
-            - `staticroutes`: Replicate Static Route configuration only
-            - `sysctl`: Replicate sysctl configuration only
-            - `snmpd`: Replicate SNMP configuration only
-            - `shaper`: Replicate Traffic Shaper configuration only
-            - `vlans`: Replicate VLAN configurations only
-            - `wol`: Replicate Wake-On-LAN configuration only
+        - `all`: Replicate entire XML configuration
+        - `aliases`: Replicate only firewall aliases
+        - `captiveportal`: Replicate captive portal configurations
+        - `voucher`: Replicate captive portal vouchers
+        - `dnmasq`: Replicate DNS Forwarder configuration only
+        - `unbound`: Replicate DNS Resolver configuration only
+        - `dhcpd`: Replicate DHCP configuration only
+        - `dhcpdv6`: Replicate DHCP (IPv6) configuration only
+        - `filter`: Replicate Firewall configuration only
+        - `interfaces`: Replicate Interface configuration only
+        - `ipsec`: Replicate IPsec configuration only
+        - `nat`: Replicate NAT configuration only
+        - `OpenVPN`: Replicate OpenVPN configuration only
+        - `installedpackages`: Replicate installed packages only
+        - `rrddata`: Replicate RRD graph data only
+        - `cron`: Replicate Cron configuration only
+        - `syslog`: Replicate Syslog configuration only
+        - `system`: Replicate System settings only
+        - `staticroutes`: Replicate Static Route configuration only
+        - `sysctl`: Replicate sysctl configuration only
+        - `snmpd`: Replicate SNMP configuration only
+        - `shaper`: Replicate Traffic Shaper configuration only
+        - `vlans`: Replicate VLAN configurations only
+        - `wol`: Replicate Wake-On-LAN configuration only
     - `<replication_targets>` : Specify hostname/IPs of pfSense systems to replicate the configuration to (multiple entries must be comma separated or added interactively)
 
 - `--add-tunable` : Adds a new system tunable to System > Advanced > System Tunables
