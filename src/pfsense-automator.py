@@ -2875,6 +2875,48 @@ def main():
                         if arpFilter.upper() in ["-A", "--ALL"]:
                             print(header) if counter == 0 else None  # Print our header if we are just starting loop
                             print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
+                        # Check if user wants to filter by interface
+                        elif arpFilter.startswith(("-i=","--iface=")):
+                            ifaceExp = arpFilter.replace("-i=","").replace("--iface","")    # Remove our filter identifier to capture our interface expression
+                            print(header) if counter == 0 else None  # Print our header if we are just starting loop
+                            # Check that our interface matches our interface expression
+                            if value["interface"].startswith(ifaceExp):
+                                print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
+                        # Check if user wants to filter by IP
+                        elif arpFilter.startswith(("-p=","--ip=")):
+                            ipExp = arpFilter.replace("-p=","").replace("--ip","")    # Remove our filter identifier to capture our IP expression
+                            print(header) if counter == 0 else None  # Print our header if we are just starting loop
+                            # Check that our interface matches our IP expression
+                            if value["ip"].startswith(ipExp):
+                                print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
+                        # Check if user wants to filter by hostname
+                        elif arpFilter.startswith(("-h=","--hostname=")):
+                            hostnameExp = arpFilter.replace("-h=","").replace("--hostname","")    # Remove our filter identifier to capture our hostname expression
+                            print(header) if counter == 0 else None  # Print our header if we are just starting loop
+                            # Check that our interface matches our hostname expression
+                            if value["hostname"].startswith(hostnameExp):
+                                print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
+                        # Check if user wants to filter by MAC
+                        elif arpFilter.startswith(("-m=","--mac=")):
+                            macExp = arpFilter.replace("-m=","").replace("--mac","")    # Remove our filter identifier to capture our MAC expression
+                            print(header) if counter == 0 else None  # Print our header if we are just starting loop
+                            # Check that our interface matches our MAC expression
+                            if value["mac_addr"].startswith(macExp):
+                                print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
+                        # Check if user wants to filter by MAC vendor
+                        elif arpFilter.startswith(("-v=","--vendor=")):
+                            vendorExp = arpFilter.replace("-v=","").replace("--vendor","")    # Remove our filter identifier to capture our MAC vendor expression
+                            print(header) if counter == 0 else None  # Print our header if we are just starting loop
+                            # Check that our interface matches our MAC vendor expression
+                            if value["mac_vendor"].startswith(vendorExp):
+                                print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
+                        # Check if user wants to filter by link type
+                        elif arpFilter.startswith(("-l=","--link=")):
+                            vendorExp = arpFilter.replace("-l=","").replace("--link","")    # Remove our filter identifier to capture our link type expression
+                            print(header) if counter == 0 else None  # Print our header if we are just starting loop
+                            # Check that our interface matches our link type expression
+                            if value["type"].startswith(vendorExp):
+                                print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
                         # If we want to export values as JSON
                         elif arpFilter.startswith(("--json=", "-j=")):
                             jsonPath = arpFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags

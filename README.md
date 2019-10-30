@@ -166,6 +166,12 @@ Commands
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-arp <argument>`
     - **Arguments**:
         - `--all` (`-a`) : Return all available ARP table values 
+        - `--iface` (`-i`) : Return only ARP entries on a specific interface name (e.g.`--iface=WAN`)
+        - `--ip` (`-p`) : Return only ARP entries with a specific IP (e.g. `--ip=127.0.0.1`)
+        - `--hostname` (`-h`) : Return only ARP entries with a specific hostname (e.g. `--hostname=foo-system.local`)
+        - `--mac` (`-m`) : Return only ARP entries with a specific MAC (e.g. `--mac=00:00:00:00:00:00`)
+        - `--vendor` (`-v`) : Return only ARP entries with a specific MAC vendor (e.g. `--vendor=Apple`)
+        - `--link` (`-l`) : Return only ARP entries with a specific link type(e.g. `--link=ethernet`)
         - `--json=<directory_path>` : Exports ARP data to a JSON file given an existing directory
 
 - `--read-xml` : Reads or exports XML configuration
