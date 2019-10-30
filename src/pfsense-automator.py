@@ -1472,6 +1472,33 @@ def upload_xml_backup(server, user, key, area, confFile, decryptPass):
     # Return our return code
     return xmlAdded
 
+# replicate_xml() copies the XML configuration from one pfSense box to another
+def replicate_xml(server, user, key, area, targetList):
+    # Local variables
+    replicateDict = {"ec" : 2, "targets" : {}}     # Initialize certManagerDict to return our certificate values and exit codes
+    masterConfig = get_xml_backup(server, user, key, "", False, False, True, currentDate)    # Get our XML configuration and save it to a variable
+    # Check that our master config was pulled successfully before continuing
+    if masterConfig["ec"] == 0:
+        # Loop through our target list and start to replicate configuration
+        counter = 0    # Set a counter to track loop iteration
+        for tg in targetList:
+            xmlObj = io.StringIO(masterConfig["xml"])
+            masterConfigBinary = {"conffile": xmlObj}   # Convert our string to a encoded obj and save it to our POST dictionary
+            replicateDict["targets"][counter] = {}    # Create a target dictionary entry
+            targetUpload = upload_xml_backup(tg, user, key, area, masterConfigBinary, currentDate)    # Run our function and capture the exit code
+            xmlObj.close()    # Close our object now that it is no longer needed
+            replicateDict["targets"][counter]["host"] = tg    # Save our target hostname/IP to dictionary
+            replicateDict["targets"][counter]["ec"] = targetUpload    # Save our function exit code to dictionary
+            replicateDict["targets"][counter]["replicated"] = True if targetUpload == 0 else False    # Assign a bool value stating whether replication was successful
+            counter = counter + 1   # Increase our counter
+        # Return success exit code as we have populated our dictionary
+        replicateDict["ec"] = 0
+    # If we could not pull the master configuration
+    else:
+        replicateDict["ec"] = masterConfig["ec"]    # Save exit code from the failed function
+    # Return our dictionary
+    return replicateDict
+
 # get_system_tunables() pulls the System Tunable values from the advanced settings
 def get_system_tunables(server, user, key):
     tunables = {"ec" : 2, "tunables" : {}}    # Pre-define our function dictionary
@@ -1911,33 +1938,6 @@ def add_dns_entry(server, user, key, host, domain, ip, descr):
         recordAdded = 9    # Set return value to 9 (9 means record already existed when function started)
     # Return exit code
     return recordAdded
-
-# replicate_xml() copies the XML configuration from one pfSense box to another
-def replicate_xml(server, user, key, area, targetList):
-    # Local variables
-    replicateDict = {"ec" : 2, "targets" : {}}     # Initialize certManagerDict to return our certificate values and exit codes
-    masterConfig = get_xml_backup(server, user, key, area, False, False, True, currentDate)    # Get our XML configuration and save it to a variable
-    # Check that our master config was pulled successfully before continuing
-    if masterConfig["ec"] == 0:
-        # Loop through our target list and start to replicate configuration
-        counter = 0    # Set a counter to track loop iteration
-        for tg in targetList:
-            xmlObj = io.StringIO(masterConfig["xml"])
-            masterConfigBinary = {"conffile": xmlObj}   # Convert our string to a encoded obj and save it to our POST dictionary
-            replicateDict["targets"][counter] = {}    # Create a target dictionary entry
-            targetUpload = upload_xml_backup(tg, user, key, area, masterConfigBinary, currentDate)    # Run our function and capture the exit code
-            xmlObj.close()    # Close our object now that it is no longer needed
-            replicateDict["targets"][counter]["host"] = tg    # Save our target hostname/IP to dictionary
-            replicateDict["targets"][counter]["ec"] = targetUpload    # Save our function exit code to dictionary
-            replicateDict["targets"][counter]["replicated"] = True if targetUpload == 0 else False    # Assign a bool value stating whether replication was successful
-            counter = counter + 1   # Increase our counter
-        # Return success exit code as we have populated our dictionary
-        replicateDict["ec"] = 0
-    # If we could not pull the master configuration
-    else:
-        replicateDict["ec"] = masterConfig["ec"]    # Save exit code from the failed function
-    # Return our dictionary
-    return replicateDict
 
 # get_ssl_certs() pulls the list of existing certificates on a pfSense host. This function basically returns the data found on /system_certmanager.php
 def get_ssl_certs(server, user, key):
@@ -3023,7 +3023,9 @@ def main():
             # Assign functions/processes for --replicate-xml
             elif pfsenseAction == "--replicate-xml":
                 # Action variables
-                xmlAreaList = ["","aliases","unbound","filter","interfaces","installedpackages","rrddata","cron","syslog","system","sysctl","snmpd","vlans"]    # Assign a list of supported XML areas
+                xmlAreaList = ["", "aliases", "captiveportal", "voucher", "dnsmasq", "unbound", "dhcpd", "dhcpdv6",
+                                "filter", "interfaces", "ipsec", "nat", "openvpn", "installedpackages", "rrddata",
+                                "cron", "syslog", "system", "staticroutes", "sysctl", "snmpd", "shaper", "vlans", "wol"]    # Assign a list of supported restore areas
                 maxTargets = 100    # Only allow a specied number of replication targets
                 replicationArea = filter_input(thirdArg) if len(sys.argv) > 3 else input("XML area: ")    # Assign user input for XML area to be replicated
                 replicationTargets = "," + fourthArg if len(sys.argv) > 4 else ","   # Assign user input for hosts to apply configuration to (comma seperated)
@@ -3067,22 +3069,22 @@ def main():
                         if replicationEc["ec"] == 0:
                             # Define a dictionary with predefined result values
                             statusDict = {
-                                0: {"status": "SUCCESS", "reason": "XML area `" + replicationArea + "` was replicated"},
-                                2: {"status": "FAILED", "reason": "replication unexpectedly failed"},
-                                3: {"status": "FAILED", "reason": "authentication failure"},
-                                6: {"status": "FAILED", "reason": "non-pfSense platform identified"},
+                                0: {"status": "SUCCESS", "reason": "Replicated `" + replicationArea + "` from " + pfsenseServer},
+                                2: {"status": "FAILED", "reason": "Replication unexpectedly failed"},
+                                3: {"status": "FAILED", "reason": "Authentication failure"},
+                                6: {"status": "FAILED", "reason": "Non-pfSense platform identified"},
                                 10: {"status": "FAILED", "reason": "DNS rebind detected"},
-                                15: {"status": "FAILED", "reason": "permission denied"},
+                                15: {"status": "FAILED", "reason": "Permission denied"},
                             }
                             hostHeader = structure_whitespace("HOST", 30, "-", True) + " "   # Format our HOST header
                             statusHeader = structure_whitespace("STATUS", 8, "-", True) + " "   # Format our STATUS header
-                            infoHeader = structure_whitespace("INFO", 40, "-", True) + " "   # Format our INFO header
+                            infoHeader = structure_whitespace("INFO", 60, "-", True) + " "   # Format our INFO header
                             print(hostHeader + statusHeader + infoHeader)    # Format our header
                             # Loop through our target result and print them
                             for list,item in replicationEc["targets"].items():
                                 hostData = structure_whitespace(item["host"], 30, " ", True) + " "    # Format our HOST data
                                 statusData = structure_whitespace(statusDict[item["ec"]]["status"], 8, " ", True) + " "    # Format our STATUS data
-                                infoData = structure_whitespace(statusDict[item["ec"]]["reason"], 40, " ", True) + " "    # Format our INFO data
+                                infoData = structure_whitespace(statusDict[item["ec"]]["reason"], 60, " ", True) + " "    # Format our INFO data
                                 print(hostData + statusData + infoData)    # Print our data
                             # Exit on zero (success)
                             sys.exit(replicationEc["ec"])
