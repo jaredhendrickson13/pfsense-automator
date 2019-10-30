@@ -19,6 +19,9 @@ import socket
 import sys
 import time
 import urllib3
+import fcntl
+import termios
+import struct
 
 # Variables
 softwareVersion = "v0.0.4 " + platform.system() + "/" + platform.machine()    # Define our current version of this software
@@ -398,6 +401,12 @@ def get_exit_message(ec, server, command, data1, data2):
     # Return our message
     return exitMessage
 
+# get_terminal_width() returns the width the of the terminal window. This can be used to dynamically scale data
+def get_terminal_width():
+     th, tw, hp, wp = struct.unpack('HHHH',
+         fcntl.ioctl(0, termios.TIOCGWINSZ,
+         struct.pack('HHHH', 0, 0, 0, 0)))
+     return tw
 # http_request() uses the requests module to make HTTP POST/GET requests
 def http_request(url, data, headers, files, method):
     # Local Variables
@@ -2849,12 +2858,18 @@ def main():
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
                 arpTable = get_arp_table(pfsenseServer, user, key)
+                maxWidth = 110   # Assign the max width of our data table
+                tWidth = get_terminal_width()   # Get our terminal width and determine if we need to scale content
+                scaleCalc = tWidth/maxWidth    # Calculate our scale percentage
+                scaleFactor = 1 if tWidth <= maxWidth else scaleCalc    # Determine if we need to scale our content outward
+                scaleFactor = scaleCalc if 1 > scaleCalc >= 0.6 else scaleFactor   # Determine if we need to scale our content inward
+                scaleFactor = 2 if scaleCalc > 2 else scaleFactor    # Only allow outward scaling up to 2x
                 idHead = structure_whitespace("#", 5, "-", True) + " "    # Format our ID header value
-                interfaceHead = structure_whitespace("INTERFACE", 15, "-", True) + " "    # Format our interface header header value
+                interfaceHead = structure_whitespace("INTERFACE", int(15*(scaleFactor*0.8)), "-", True) + " "    # Format our interface header header value
                 ipHead = structure_whitespace("IP", 15, "-", True) + " "    # Format our ip header value
-                hostHead = structure_whitespace("HOSTNAME", 20, "-", True) + " "    # Format our host header value
+                hostHead = structure_whitespace("HOSTNAME", int(20*(scaleFactor*0.8)), "-", True) + " "    # Format our host header value
                 macAddrHead = structure_whitespace("MAC ADDR", 20, "-", True) + " "    # Format our mac address header value
-                vendorHead = structure_whitespace("MAC VENDOR", 12, "-", True) + " "    # Format our mac vendor header value
+                vendorHead = structure_whitespace("MAC VENDOR", int(12*(scaleFactor*1.5)), "-", True) + " "    # Format our mac vendor header value
                 expireHead = structure_whitespace("EXPIRES", 12, "-", True) + " "    # Format our expiration header value
                 linkHead = structure_whitespace("LINK", 8, "-", True) + " "    # Format our link type header value
                 header = idHead + interfaceHead + ipHead + hostHead + macAddrHead + vendorHead + expireHead + linkHead   # Format our print header
@@ -2864,11 +2879,11 @@ def main():
                     counter = 0    # Assign a loop counter
                     for key,value in arpTable["arp"].items():
                         id = structure_whitespace(str(key), 5, " ", True) + " "    # Get our entry number
-                        interface = structure_whitespace(value["interface"], 15, " ", True)  + " "   # Get our interface ID
+                        interface = structure_whitespace(value["interface"], int(15*(scaleFactor*0.8)), " ", True)  + " "   # Get our interface ID
                         ip = structure_whitespace(value["ip"], 15, " ", True) + " "    # Get our IP
-                        hostname = structure_whitespace(value["hostname"], 20, " ", True) + " "    # Get our hostnames
+                        hostname = structure_whitespace(value["hostname"], int(20*(scaleFactor*0.8)), " ", True) + " "    # Get our hostnames
                         macAddr = structure_whitespace(value["mac_addr"], 20, " ", True) + " "    # Get our MAC address level
-                        macVendor = structure_whitespace(value["mac_vendor"], 12, " ", True) + " "   # Get our MAC vendor
+                        macVendor = structure_whitespace(value["mac_vendor"], int(12*(scaleFactor*1.5)), " ", True) + " "   # Get our MAC vendor
                         expires = structure_whitespace(value["expires"], 12, " ", True) + " "   # Get our expiration
                         link = structure_whitespace(value["type"], 8, " ", True) + " "   # Get our link
                         # If we want to return all values
@@ -3150,6 +3165,12 @@ def main():
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
                 supportedFilters = ("--all", "-a", "-d", "default", "-i=","--iface=","-v=","--vlan=","-n=", "--name=", "-c=", "--cidr=", "-j", "--json")    # Tuple of support filter arguments
+                maxWidth = 200   # Assign the max width needed for our data table
+                tWidth = get_terminal_width()   # Get our terminal width and determine if we need to scale content
+                scaleCalc = tWidth/maxWidth    # Calculate our scale percentage
+                scaleFactor = 1 if tWidth <= maxWidth else scaleCalc    # Determine if we need to scale our content outward
+                scaleFactor = scaleCalc if 1 > scaleCalc >= 0.4 else scaleFactor   # Determine if we need to scale our content inward
+                scaleFactor = 1.5 if scaleCalc > 1.5 else scaleFactor    # Only allow outward scaling up to 2x
                 # Check if our filter input is all or default
                 if ifaceFilter.lower() in supportedFilters or ifaceFilter.startswith(supportedFilters):
                     ifaceData = get_interfaces(pfsenseServer, user, key)  # Get our data dictionary
@@ -3176,7 +3197,7 @@ def main():
                         # If user is not requesting JSON, print normally
                         else:
                             # Format our header values
-                            headerName = structure_whitespace("NAME", 30, "-", True) + " "    # NAME header
+                            headerName = structure_whitespace("NAME", int(30*scaleFactor), "-", True) + " "    # NAME header
                             headerIface = structure_whitespace("INTERFACE", 18, "-", True) + " "    # INTERFACE header
                             headerId = structure_whitespace("ID", 8, "-", True) + " "    # ID header
                             headerType = structure_whitespace("TYPE", 10, "-", True) + " "    # TYPE header
@@ -3187,7 +3208,7 @@ def main():
                             dataTable = header    # Assign a dataTable our loop will populate with data before printing
                             for pfId,data in ifaceData["ifaces"].items():
                                 # Format and print our values
-                                name = structure_whitespace(data["descr"], 30, " ", True) + " "    # Format our name value
+                                name = structure_whitespace(data["descr"], int(30*scaleFactor), " ", True) + " "    # Format our name value
                                 iface = structure_whitespace(data["id"], 18, " ", True) + " "    # Format our iface value
                                 id = structure_whitespace(data["pf_id"], 8, " ", True) + " "    # Format our pf_id value
                                 type = structure_whitespace(data["type"], 10, " ", True) + " "    # Format our IP type
@@ -3283,9 +3304,15 @@ def main():
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
                 tunables = get_system_tunables(pfsenseServer, user, key)
+                maxWidth = 140   # Assign the max width needed for our data table
+                tWidth = get_terminal_width()   # Get our terminal width and determine if we need to scale content
+                scaleCalc = tWidth/maxWidth    # Calculate our scale percentage
+                scaleFactor = 1 if tWidth <= maxWidth else scaleCalc    # Determine if we need to scale our content outward
+                scaleFactor = scaleCalc if 1 > scaleCalc >= 0.2 else scaleFactor   # Determine if we need to scale our content inward
+                scaleFactor = 2 if scaleCalc > 2 else scaleFactor    # Only allow outward scaling up to 2x
                 numHead = structure_whitespace("#", 3, "-", True) + " "    # Format our number header value
                 nameHead = structure_whitespace("NAME", 40, "-", True) + " "    # Format our name header value
-                descrHead = structure_whitespace("DESCRIPTION", 25, "-", True) + " "    # Format our ip description value
+                descrHead = structure_whitespace("DESCRIPTION", int(scaleFactor*30), "-", True) + " "    # Format our ip description value
                 valueHead = structure_whitespace("VALUE", 15, "-", True) + " "    # Format our host value value
                 idHead = structure_whitespace("ID", 40, "-", True) + " "    # Format our host value value
                 header = numHead + nameHead + descrHead + valueHead + idHead  # Format our print header
@@ -3296,7 +3323,7 @@ def main():
                     for key,value in tunables["tunables"].items():
                         tunNumber = structure_whitespace(str(counter), 3, " ", True) + " "    # Get our entry number
                         tunName = structure_whitespace(value["name"], 40, " ", True)  + " "   # Get our tunable name
-                        tunDescr = structure_whitespace(value["descr"], 25, " ", True) + " "    # Get our tunable description
+                        tunDescr = structure_whitespace(value["descr"], int(scaleFactor*30), " ", True) + " "    # Get our tunable description
                         tunValue = structure_whitespace(value["value"], 15, " ", True) + " "    # Get our value
                         tunId = structure_whitespace(value["id"], 40, " ", True) + " "    # Get our ID
                         # If we want to return all values
