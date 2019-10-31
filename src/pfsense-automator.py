@@ -3017,7 +3017,7 @@ def main():
                         # If user wants to export the XML data to a file
                         elif xmlFilter.startswith(("--export=","-e=")):
                             exportPath = xmlFilter.replace("-e=", "").replace("--export=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
-                            exportName = "pf-xml-" + xmlArea + "-" + currentDate + ".xml"    # Assign our default XML name
+                            exportName = "pf-xml-" + xmlArea + "-" + pfsenseServer + "-" + currentDate + ".xml"    # Assign our default XML name
                             # Check if our directory exists
                             if os.path.exists(exportPath):
                                 # Open our file for writing
@@ -3690,7 +3690,7 @@ def main():
                             if sshForward.lower() in ["enable", "disable", "enable-forwarding", "yes", "none", "default"]:
                                 ecSetupSsh = setup_ssh(pfsenseServer, user, key, enableSsh, sshPort, sshAuth, sshForward)    # Execute our configuration function
                                 # Print our exit message and exit on return code
-                                print(get_exit_message(ecSetupSsh, pfsenseServer, pfsenseAction, "", ""))
+                                print(get_exit_message(ecSetupSsh, pfsenseServer, pfsenseAction, sshAuth, ""))
                                 sys.exit(ecSetupSsh)
                             # If our sshForward value is invalid
                             else:
