@@ -83,6 +83,13 @@ Commands
         - `--console-options` (`-co`) : Return only configuration from the Console options section of /system_advanced_admin.php
         - `--json=<directory_path>` : Exports Advanced Admin data to a JSON file given an existing directory
 
+- `--read-users`: Reads current local user database
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-users <argument>`
+    - **Arguments**:
+        - `--all` (`-a`,`-d`,`default`) : Return all users
+        - `--username` (`-un`) : Return only configuration for a single user (e.g. `--username=admin`)
+        - `--json=<directory_path>` : Exports user data to a JSON file given an existing directory
+
 - `--setup-wc` : Configures pfSense webConfigurator's advanced options. This excludes the webConfigurator protocol and port number as they cannot be changed statefully. See `--set-wc-port` below. 
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-wc <max_procs> <http_redirect> <hsts> <login_autocomplete> <login_msg> <anti_lockout> <dns_rebind> <alt_hostnames> <http_referer> <tab_text>`
     - **Arguments**:
@@ -303,6 +310,15 @@ Commands
         - `--all` (`-a`) : Return all available alias values in a YAML like format
         - `--name=<alias_name>` (`-n`) : Return only one alias given a valid alias name
         - `--json=<directory_path>` : Exports alias data to a JSON file given an existing directory
+
+- `--read-virtual-ips` : Reads our configured virtual IPs from firewall_virtual_ip.php
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-virtual-ips <argument>`
+    - **Arguments**:
+        - `--all` (`-a`) : Return all configured virtual IPs and print them 
+        - `--type` (`-t`) : Return only a specified type of virtual IPs (e.g. `--type=proxyarp`)
+        - `--iface` (`-i`) : Return only virtual IPs configured on a specific interface (e.g. `--iface=wan`) _Note: this uses the pf interface ID not the user configured ID_
+        - `--subnet` (`-s`) : Return virtual IPs matching a subnet expression (e.g. `--subnet=127.0.0.1/32`) _Note: this filter matches entries that start with your expression, the more specific your expression the more specific your results will be_
+        - `--json=<directory_path>` : Exports virtual IP data to a JSON file given an existing directory
 
 - `--modify-alias` : Modifies an existing Firewall Alias. Existing entries will be overwritten. 
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --modify-alias <alias name> <IPs or hostnames>`

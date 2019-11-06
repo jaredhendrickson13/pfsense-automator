@@ -124,6 +124,19 @@ def get_exit_message(ec, server, command, data1, data2):
             "export_success": "Successfully exported advanced admin options to " + data1,
             "export_fail": "Failed to export advanced admin options as JSON"
         },
+        # Error/success messages for --read-adv-admin flag
+        "--read-users": {
+            2: "Error: Unexpected error reading user database",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "invalid_user": "Error: User `" + data1 + "` does not exist",
+            "export_err": "Error: export directory `" + data1 + "` does not exist",
+            "export_success": "Successfully exported user data to " + data1,
+            "export_fail": "Failed to export user data as JSON"
+        },
         # Error/success messages for --setup-wc
         "--setup-wc": {
             0: "Successfully setup webConfigurator options on `" + server + "`",
@@ -183,7 +196,7 @@ def get_exit_message(ec, server, command, data1, data2):
             6: globalPlatformErrMsg,
             10: globalDnsRebindMsg,
             15: globalPermissionErrMsg,
-            "invalid_": "Error: Invalid filter `" + data1 + "`",
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
             "export_err": "Error: export directory `" + data1 + "` does not exist",
             "export_success": "Successfully exported ARP table to " + data1,
             "export_fail": "Failed to export ARP table as JSON"
@@ -358,6 +371,18 @@ def get_exit_message(ec, server, command, data1, data2):
             10 : globalDnsRebindMsg,
             15: globalPermissionErrMsg,
             "invalid_syntax" : "Error: Invalid syntax - `pfsense-automator <pfSense IP or FQDN> --modify-alias <alias name> <alias values>`"
+        },
+        # Error/success messages for --read-virtual-ip
+        "--read-virtual-ips" : {
+            2 : "Error: Unknown error gathering virtual IP data",
+            3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err" : "Error: export directory `" + data1 + "` does not exist",
+            "export_success" : "Successfully exported Virtual IP data to " + data1,
+            "export_fail" : "Failed to export Virtual IP data as JSON"
         },
         # Error/success messages for --set-wc-sslcert
         "--set-wc-sslcert" : {
@@ -637,6 +662,245 @@ def get_csrf_token(url, type):
             csrfToken = ""    # Assign blank CSRF token as none was found
         return csrfToken    # Return our token
 
+# get_permissions_table() returns a dictionary file containing all user privileges, and their POST data values
+def get_permissions_table(server, user, key):
+    # Local variables
+    prms = {"ec":2,"privileges":{}}    # Initialize a dictionary to populate our user database too
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    # Submit our intitial request and check for errors
+    prms["ec"] = 10 if check_dns_rebind_error(url) else prms["ec"]    # Return exit code 10 if dns rebind error found
+    prms["ec"] = 6 if not validate_platform(url) else prms["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if prms["ec"] == 2:
+        prms["ec"] = 3 if not check_auth(server, user, key) else prms["ec"]    # Return exit code 3 if we could not sign in
+    # Check if we encountered any errors before staring
+    if prms["ec"] == 2:
+        getAllGroupId = get_user_groups(server, user, key)    # Find the 'all' group ID, this group displays all available privileges
+        # Check that we could find group containing all available permissions
+        if getAllGroupId["ec"] == 0:
+            getPrmsData = http_request(url + "/system_groupmanager_addprivs.php?groupid=" + getAllGroupId["groups"]["all"]["id"], {}, {}, {}, "GET")    # Pull our users data using GET HTTP
+            # Check that we had permissions for this page
+            if check_permissions(getPrmsData):
+                # Parse our HTML output to only return the privilege select tag
+                permissionSelect = getPrmsData["text"].split("<select class=\"form-control multiselect\" name=\"sysprivs[]\" id=\"sysprivs[]\" multiple=\"multiple\">")[1].split("</select>")[0]
+                permissionOpt = permissionSelect.split("<option value=\"")    # Split our select tag into a list of selectable options
+                del permissionOpt[0]    # Delete first list item as it contains the data before our options
+                # Loop through each option and gather it's info
+                for opt in permissionOpt:
+                    # Assign default admin privileges in the case that we cannot pull them dynamically
+                    defaulAdmPriv = """
+                        User - System: Copy files (scp)<br/>User - System: Shell account access<br/>WebCfg - All pages<br/>
+                        WebCfg - Diagnostics: Backup & Restore<br/>WebCfg - Diagnostics: Command<br/>WebCfg - Diagnostics: Edit File<br/>WebCfg - Diagnostics: Factory defaults<br/>
+                        WebCfg - OpenVPN: Servers Edit Advanced<br/>WebCfg - OpenVPN: Client Specific Override Edit Advanced<br/>
+                        WebCfg - OpenVPN: Clients Edit Advanced<br/>WebCfg - System: Authentication Servers<br/>WebCfg - System: Group Manager<br/>
+                        WebCfg - System: Group Manager: Add Privileges<br/>WebCfg - System: User Manager<br/>WebCfg - System: User Manager: Add Privileges<br/>
+                        WebCfg - System: User Manager: Settings
+                    """
+                    descrName = opt.split(">")[1].split("</option")[0]    # Find our descriptive UI name for the privilege
+                    httpName = opt.split("\"")[0]    # Find our POST name for the value
+                    adminPrivData = getPrmsData["text"].split("<span>Privilege information</span>")[1].split("</div>")[0] if "<span>Privilege information</span>" in getPrmsData["text"] else defaulAdmPriv    # Dynamically update privilege data if it's available, otherwise assume defaults
+                    privLevel = "admin" if descrName in adminPrivData else "user"    # Check if our privilege is an admin privilege, otherwise assign it as a user privilege
+                    privLevel = "readonly" if descrName == "User - Config: Deny Config Write" else privLevel    # If privilege assigns readonly access, assign the privilege level to readonly
+                    prms["privileges"][descrName] = {"name":httpName,"level":privLevel}    # Initialize our individual privilege dictionary
+                # Assign success exit code
+                prms["ec"] = 0
+             # If we do not have permissions to access the permissions table
+            else:
+                prms["ec"] = 15    # Return exit code 15 (permission denied)
+        # Return exit code indicating we could not find master privilege list
+        else:
+            prms["ec"] = 20    # Assign exit code 20, could not locate master privilege list
+    # Return our dictionary
+    return prms
+
+# get_users() pulls information from /system_usermanager.php to gather information on all local pfSense users
+def get_users(server, user, key):
+    # Local variables
+    users = {"ec":2,"users":{}}    # Initialize a dictionary to populate our user database too
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    # Submit our intitial request and check for errors
+    users["ec"] = 10 if check_dns_rebind_error(url) else users["ec"]    # Return exit code 10 if dns rebind error found
+    users["ec"] = 6 if not validate_platform(url) else users["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if users["ec"] == 2:
+        users["ec"] = 3 if not check_auth(server, user, key) else users["ec"]    # Return exit code 3 if we could not sign in
+    # Check if we encountered any errors before staring
+    if users["ec"] == 2:
+        # Check that we had permissions for this page
+        getUserData = http_request(url + "/system_usermanager.php", {}, {}, {}, "GET")    # Pull our users data using GET HTTP
+        if check_permissions(getUserData):
+            # Save our user permissions dictionary
+            masterPrivDict = get_permissions_table(server, user, key)    # Pull the dictionary containing all privileges and their POST data names
+            # Parse our HTML response and save user data if expected tags found
+            if "<tbody>" in getUserData["text"]:
+                userTableBody = getUserData["text"].split("<tbody>")[1].split("</tbody>")[0]    # Save anything between tbody opening and closing tags
+                userTableRows = userTableBody.split("<tr>")    # Save our user table rows to a list
+                # Check that our list has data
+                if len(userTableRows) > 0:
+                    # Loop through our users and pull their data
+                    for u in userTableRows:
+                        # Check that table data exists
+                        if "<td>" in u:
+                            # Split our row into data fields
+                            userTableData = u.split("<td>")
+                            uname = userTableData[2].replace("\t","").replace("\n","").replace(" ","").split("</i>")[1].split("</td>")[0]    # Save our username
+                            uid = userTableData[6].replace("\t","").replace("\n","").replace(" ","").split("?act=edit&amp;userid=")[1].split("\"></a>")[0]    # Save our user ID
+                            # Now that we have our user ID, open the edit page to read more information
+                            if uid.isdigit():
+                                # Try to parse our values, if an error is thrown break the loop and return failed exit code
+                                try:
+                                    getUserAdvData = http_request(url + "/system_usermanager.php?act=edit&userid=" + uid, {}, {}, {}, "GET")    # Save our advanced user data
+                                    privLevel = "user"    # Default each user to privilege level 'user' until determined otherwise
+                                    definedBy = getUserAdvData["text"].split("<span>Defined by</span>")[1].split("</div>")[0].replace("\t","").replace("\n","").split("<div class=\"col-sm-10\">")[1] if "<span>Defined by</span>" in getUserAdvData["text"] else ""    # Save our defined by field
+                                    disabled = "yes" if "checked=\"checked\"" in getUserAdvData["text"].split("<span>Disabled</span>")[1].split("</div>")[0] else ""    # Save our disable login value
+                                    fullName = getUserAdvData["text"].split("<span>Full name</span>")[1].split("</div>")[0].split("value=\"")[1].split("\"")[0] if "<span>Full name</span>" in getUserAdvData["text"] else ""  # Save our user's full name value
+                                    expDate = getUserAdvData["text"].split("<span>Expiration date</span>")[1].split("</div>")[0].split("value=\"")[1].split("\"")[0] if definedBy == "USER" else ""    # Save our exp data if a USER defined user
+                                    customUi = "yes" if "checked=\"checked\"" in getUserAdvData["text"].split("<span>Custom Settings</span>")[1].split("</div>")[0] else ""    # Save our custom UI value
+                                    authKeys = getUserAdvData["text"].split("=\"authorizedkeys\">")[1].split("</textarea>")[0] if "=\"authorizedkeys\">" in getUserAdvData["text"] else ""   # Save our user's authorized keys
+                                    ipsecKeyRaw = getUserAdvData["text"].split("<span>IPsec Pre-Shared Key</span>")[1].split("</div>")[0] if "<span>IPsec Pre-Shared Key</span>" in getUserAdvData["text"] else ""   # Save entire table data value for IPsec keys, we need to be more granular with this value
+                                    ipsecKey = ipsecKeyRaw.split("value=\"")[1].split("\"")[0] if "value=" in ipsecKeyRaw else ""    # If our IPsec key contains a value, save that value, otherwise assume default
+                                except:
+                                    users["ec"] = 2    # Return an error code
+                                    break     # Break our loop as we are missing expected data
+                                # Check our GROUP memberships
+                                groupSelection = getUserAdvData["text"].split("name=\"groups[]\"")[1].split("</select>")[0] if "name=\"groups[]\"" in getUserAdvData["text"] else ""    # Target our select tag for groups we are members of
+                                groupListRaw = groupSelection.split("<option value=\"") if "<option value=\"" in groupSelection else [""]    # Create a unformatted list of groups we are members of
+                                groupList = []    # Initialize our formatted list to be populated by our loop
+                                # Loop through our list of groups and format the final list
+                                del groupListRaw[0]    # Remove our first list item as it is before our target value
+                                for g in groupListRaw:
+                                    groupList.append(g.split("\"")[0])    # Add our formatted items to the list
+                                # Check our USER PERMISSIONS
+                                privTableBody = getUserAdvData["text"].split("<h2 class=\"panel-title\">Effective Privileges</h2>")[1].split("</i>Add</a></nav>")[0].split("<tbody>")[1].split("</tbody>")[0]
+                                privTableRows = privTableBody.split("<tr>") if "<tr>" in privTableBody else ['']   # Split our table rows into a list
+                                privDict = {}    # Create a dictionary to save our privilege data to
+                                privDict["level"] = "user"  # Default to user privilege until determined otherwise
+                                # Loop through our table rows and pull their data
+                                del privTableRows[0]    # Remove our first row value as it contains data listed before table rows start
+                                counter = 0    # Create a loop counter to track our loop iteration
+                                for r in privTableRows:
+                                    # Check that we are not on the last index
+                                    if "Security notice" not in r:
+                                        privDict[counter] = {}    # Create a dictionary for this privilege
+                                        privDict[counter]["id"] = r.split("<td>")[4].split("id=\"")[1].split("\"")[0] if "id=\"" in r.split("<td>")[4] else ""
+                                        privDict[counter]["inherited"] = r.split("<td>")[1].split("</td>")[0]
+                                        privDict[counter]["descr_name"] = r.split("<td>")[2].split("</td>")[0]
+                                        privDict[counter]["descr"] = r.split("<td>")[3].split("</td>")[0]
+                                        privDict[counter]["name"] = masterPrivDict["privileges"][privDict[counter]["descr_name"]]["name"]
+                                        # Check if our privilege level is admin and not readonly
+                                        if masterPrivDict["privileges"][privDict[counter]["descr_name"]]["level"] == "admin" and privDict["level"] != "readonly":
+                                            privDict["level"] = "admin"    # Set our privilege level to admin
+                                        # Check if our privilege level is read only
+                                        if masterPrivDict["privileges"][privDict[counter]["descr_name"]]["level"] == "readonly":
+                                            privDict["level"] = "readonly"    # Set our privilege level to readonly
+                                        counter = counter + 1    # Increase our counter
+                                # Check our USER CERTIFICATES
+                                certTableBody = getUserAdvData["text"].split("<h2 class=\"panel-title\">User Certificates</h2>")[1].split("</i>Add</a></nav>")[0].split("<tbody>")[1].split("</tbody>")[0]
+                                certTableRows = certTableBody.split("<tr>") if "<tr>" in privTableBody else ['']  # Split our table rows into a list
+                                certDict = {}  # Create a dictionary to save our cert data to
+                                # Loop through our table rows and pull their data
+                                del certTableRows[0]  # Remove our first row value as it contains data listed before table rows start
+                                counter = 0  # Create a loop counter to track our loop iteration
+                                for c in certTableRows:
+                                    certDict[counter] = {}    # Create a dictionary for this privilege
+                                    certDict[counter]["id"] = c.split("<td>")[3].split("id=\"")[1].split("\"")[0] if "id=\"" in c.split("<td>")[3] else ""
+                                    certDict[counter]["name"] = c.split("<td>")[1].split("</td>")[0]
+                                    certDict[counter]["ca"] = c.split("<td>")[2].split("</td>")[0]
+                                # Check our USER CUSTOM UI values
+                                uiDict = {}    # Initialize a UI dictionary to track users UI settings
+                                uiSelectTags = ["webguicss","webguifixedmenu","webguihostnamemenu"]
+                                uiTextTags = ["dashboardcolumns"]
+                                uiCheckTags = ["interfacessort","dashboardavailablewidgetspanel","systemlogsfilterpanel","systemlogsmanagelogpanel",
+                                               "statusmonitoringsettingspanel","webguileftcolumnhyper","disablealiaspopupdetail","pagenamefirst"]
+                                # Loop through our SELECT input tags
+                                for s in uiSelectTags:
+                                    if "name=\""+s+"\"" in getUserAdvData["text"]:
+                                        userGuiScheme = getUserAdvData["text"].split("name=\""+s+"\"")[1].split("</select>")[0].split("<option value=\"")
+                                        # Loop through our UI values and save our configuration
+                                        for c in userGuiScheme:
+                                            # Check if this value is selected
+                                            if "selected>" in c:
+                                                uiDict[s] = c.split("\"")[0]    # Save our value
+                                                break    # Break the loop as we have found our value
+                                            else:
+                                                uiDict[s] = ""    # Save default value
+                                    else:
+                                        uiDict[s] = ""  # Save default value
+                                # Loop through our CHECKBOX input tags
+                                for x in uiCheckTags:
+                                     # Check if we have a systemlogsfilterpanel option
+                                    if "<input name=\""+x+"\"" in getUserAdvData["text"]:
+                                        uiDict[x] = True if "checked" in getUserAdvData["text"].split("<input name=\""+x+"\"")[1].split("</label>")[0] else False
+                                    # If we do not have this option, assign empty string
+                                    else:
+                                        uiDict[x] = ""
+                                # Loop through our TEXT input tags
+                                for t in uiTextTags:
+                                    if "name=\""+t+"\"" in getUserAdvData["text"]:
+                                        uiDict[t] = getUserAdvData["text"].split("name=\""+t+"\"")[1].split("value=\"")[1].split("\"")[0]  # Get our value
+                                    # If we do not have this option, assign empty string
+                                    else:
+                                        uiDict[t] = ""
+                                # Save our values to user dictionary
+                                users["users"][uname] = {
+                                    "username" : uname,
+                                    "id" : uid,
+                                    "type" : definedBy,
+                                    "disabled" : disabled,
+                                    "full_name" : fullName,
+                                    "expiration" : expDate,
+                                    "custom_ui" : customUi,
+                                    "custom_ui_config" : uiDict,
+                                    "groups" : groupList,
+                                    "privileges" : privDict,
+                                    "user_certificates" : certDict,
+                                    "authorized_keys" : authKeys,
+                                    "ipsec_keys" : ipsecKey
+                                }
+                        # Assign success exit code
+                        users["ec"] = 0
+        # If we did not have permissions to read user data
+        else:
+            users["ec"] = 15    # Assign exit code 15 (permission denied)
+    return users
+
+# get_user_groups() pulls information from system_groupmanager.php and formats all data about configured user groups
+def get_user_groups(server, user, key):
+    # Local variables
+    groups = {"ec":2,"groups":{}}    # Initialize a dictionary to populate our user database too
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    # Submit our intitial request and check for errors
+    groups["ec"] = 10 if check_dns_rebind_error(url) else groups["ec"]    # Return exit code 10 if dns rebind error found
+    groups["ec"] = 6 if not validate_platform(url) else groups["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if groups["ec"] == 2:
+        groups["ec"] = 3 if not check_auth(server, user, key) else groups["ec"]    # Return exit code 3 if we could not sign in
+    # Check if we encountered any errors before staring
+    if groups["ec"] == 2:
+        # Check that we had permissions for this page
+        getGroupData = http_request(url + "/system_groupmanager.php", {}, {}, {}, "GET")    # Pull our groups data using GET HTTP
+        if check_permissions(getGroupData):
+            # Check that we have table information
+            if "<tbody>" in getGroupData["text"]:
+                groupTableBody = getGroupData["text"].split("<tbody>")[1].split("</tbody>")[0]    # Save all data between our tbody HTML tags
+                groupTableRows = groupTableBody.split("<tr>")    # Split our tbody into list of table rows
+                del groupTableRows[0]    # Remove first item as it contains all the data before our table rows
+                # Loop through our rows and gather our data
+                for g in groupTableRows:
+                    g = g.replace("\t","").replace("\n","")    # Remove whitespace
+                    groupName = g.split("<td>")[1].split("</td>")[0]    # Save our group name
+                    groupDescr = g.split("<td>")[2].split("</td>")[0]    # Save our group description
+                    groupCount = g.split("<td>")[3].split("</td>")[0]    # Save our group member count
+                    groupId = g.split("<td>")[4].split("</td>")[0].split("groupid=")[1].split("\">")[0]    # Save our group ID
+                    groups["groups"][groupName] = {"name":groupName,"descr":groupDescr,"count":groupCount,"id":groupId}    # Define a nested dict for our current group
+                # Return success exit code
+                groups["ec"] = 0
+        # If we could not access the groups page
+        else:
+            groups["ec"] = 15    # Assign exit code 15 (permission denied)
+    # Return our group dictionary
+    return groups
+
 # get_general_setup() pulls information from /system.php (this excludes webConfigurator UI preferences)
 def get_general_setup(server, user, key):
     # Local variables
@@ -752,7 +1016,7 @@ def get_general_setup(server, user, key):
                 wcTable = getGeneralData["text"].split("<h2 class=\"panel-title\">webConfigurator</h2>")[1].split("<script type=\"text/javascript\">")[0]   # Split HTML into specific section
                 # Check if we have a pfSense color scheme configuration
                 if "name=\"webguicss\"" in wcTable:
-                     # Loop through our color schemes and find our currently selected color scheme
+                    # Loop through our color schemes and find our currently selected color scheme
                     wcGuiScheme = wcTable.split("name=\"webguicss\"")[1].split("</select>")[0].split("<option value=\"")
                     for c in wcGuiScheme:
                         # Check if this value is selected
@@ -2303,6 +2567,113 @@ def modify_firewall_alias(server, user, key, aliasName, newValues):
     # Return our integer exit code
     return aliasModded
 
+# get_virtual_ips() reads the configured virtual IPs from firwall_virtual_ip.php
+def get_virutal_ips(server, user, key):
+    # Local variables
+    virtIps = {"ec" : 2, "virtual_ips" : {}}    # Pre-define our dictionary to track alias values and errors
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
+     # Check for errors and assign exit codes accordingly
+    virtIps["ec"] = 10 if check_dns_rebind_error(url) else virtIps["ec"]    # Return exit code 10 if dns rebind error found
+    virtIps["ec"] = 6 if not validate_platform(url) else virtIps["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if virtIps["ec"] == 2:
+        virtIps["ec"] = 3 if not check_auth(server, user, key) else virtIps["ec"]    # Return exit code 3 if we could not sign in
+    # Check that authentication succeeded
+    if virtIps["ec"] == 2:
+        # Check that we had permissions for this page
+        getVirtIpIds = http_request(url + "/firewall_virtual_ip.php", {}, {}, {}, "GET")    # Save our GET HTTP response
+        getVirtIpEdit = http_request(url + "/firewall_virtual_ip_edit.php", {}, {}, {}, "GET")  # Save our GET HTTP response
+        if check_permissions(getVirtIpIds) and check_permissions(getVirtIpEdit):
+            # Parse our HTML output to capture the ID of each virtual IP
+            if "<tbody>" in getVirtIpIds["text"]:
+                virtIpIdTableBody = getVirtIpIds["text"].split("<tbody>")[1].split("</tbody>")[0]    # Capture all data between our tbody tags
+                virtualIpIdTableRows = virtIpIdTableBody.split("<tr>")[1:]    # Split our table body into list of rows indicated by the tr tag (remove first entry)
+                # Loop through each of our rows and pull the virtual IPs ID
+                for r in virtualIpIdTableRows:
+                    rowData = r.split("<td>")    # Split our row into the individual table data values
+                    virtIpId = rowData[5].split("firewall_virtual_ip_edit.php?id=")[1].split("\">")[0]    # Split our data value to capture the virtual IP ID
+                    virtIpDescrName = rowData[1].replace("\n","").replace("\t","").replace("</td>","")    # Capture our virtual IPs descriptive name and remove unneeded chars
+                    virtIps["virtual_ips"][virtIpId] = {"id":virtIpId,"descr_name":virtIpDescrName}    # Save each virtual IP to it's own nested dictionary
+                    # Pull further configuration from the firewall_virtual_ip_edit.php page if our ID is valid
+                    if virtIpId.isdigit():
+                        getAdvVirtIpData = http_request(url + "/firewall_virtual_ip_edit.php?id=" + virtIpId, {}, {}, {}, "GET")
+                        # Check that we have a TYPE configuration table
+                        requiredTags = ["<span class=\"element-required\">Type</span>","<span class=\"element-required\">Interface</span>"]    # Set list of tags required for this section
+                        if all(tag in getAdvVirtIpData["text"] for tag in requiredTags):
+                            virtIpTypeData = getAdvVirtIpData["text"].split(requiredTags[0])[1].split(requiredTags[1])[0]    # Capture the data in our virt IP type table
+                            virtIpTypes = virtIpTypeData.split("<label class=\"chkboxlbl\"><input name=\"mode\"")[1:]    # Split our types into a list to check values in
+                            # Loop through our Virtual IP types and determine the current configured type
+                            for type in virtIpTypes:
+                                # Check if this type is currently checked
+                                if "checked=\"checked\"" in type:
+                                    virtIps["virtual_ips"][virtIpId]["type"] = type.split("value=\"")[1].split("\"")[0]    # Split our type value and add it to the dictionary
+                                    break    # Break our loop to save processing
+                        # If we do not have the necessary tags, return default
+                        else:
+                            virtIps["virtual_ips"][virtIpId]["type"] = ""    # Assign empty string as default
+                        # Check that we have an INTERFACE configuration table
+                        requiredTags = ["<select class=\"form-control\" name=\"interface\" id=\"interface\">","</select>"]    # Set list of tags required for this section
+                        if all(tag in getAdvVirtIpData["text"] for tag in requiredTags):
+                            virtIpIfData = getAdvVirtIpData["text"].split(requiredTags[0])[1].split(requiredTags[1])[0]    # Capture the data in our virt IP iface table
+                            virtIpIfOpt = virtIpIfData.split("<option")[1:]    # Split our select tag into list of options
+                            # Loop through our options and check for selected indicator
+                            for opt in virtIpIfOpt:
+                                if "selected>" in opt:
+                                    virtIps["virtual_ips"][virtIpId]["interface"] = opt.split("value=\"")[1].split("\"")[0]    # Parse our interface POST value to our dictionary
+                                    virtIps["virtual_ips"][virtIpId]["interface_descr"] = opt.split("selected>")[1].split("</option>")[0]    # Parse our descriptive interface name to our dictionary
+                                    break    # Break our loop to save processing
+                        # If we did not have the required tags, return defaults
+                        else:
+                            virtIps["virtual_ips"][virtIpId]["interface"] = ""    # Assign default value as empty string
+                            virtIps["virtual_ips"][virtIpId]["interface_descr"] = ""    # Assign default value as empty string
+                        # Check that we have an IP ADDRESSES configuration table
+                        requiredTags = ["<input class=\"form-control\" name=\"subnet\"","</select>"]    # Set list of tags required for this section
+                        if all(tag in getAdvVirtIpData["text"] for tag in requiredTags):
+                            virtIpAddrData = getAdvVirtIpData["text"].split(requiredTags[0])[1].split(requiredTags[1])[0]    # Capture the data in our virt IP address table
+                            virtIps["virtual_ips"][virtIpId]["subnet"] = virtIpAddrData.split("value=\"")[1].split("\"")[0]    # Capture our configured IP address value and save it to our dictionary
+                        # If we did not found our expected tags assume default
+                        else:
+                            virtIps["virtual_ips"][virtIpId]["ip"] = ""    # Assign empty string as default
+                        # Loop through our SELECT option values to reduce redundant code
+                        selectTags = ["subnet_bits","vhid","advbase","advskew"]    # Assign a list of select tags to loop through and pull values from
+                        for tg in selectTags:
+                            requiredTags = ["<select class=\"form-control\" name=\""+tg+"\" id=\""+tg+"\">","</select>"]    # Set list of tags required for this section
+                            if all(tag in getAdvVirtIpData["text"].replace(" pfIpMask","") for tag in requiredTags):
+                                virtIpTagData = getAdvVirtIpData["text"].replace(" pfIpMask","").split(requiredTags[0])[1].split(requiredTags[1])[0]    # Capture the data in our virt IP tag table
+                                virtIpTagOpt = virtIpTagData.split("<option")[1:]    # Split our select tag into list of options
+                                # Loop through our tag data and determine which is selected
+                                for opt in virtIpTagOpt:
+                                    # Check if the option is current selected
+                                    if "selected" in opt:
+                                        virtIps["virtual_ips"][virtIpId][tg] = opt.split("value=\"")[1].split("\"")[0]    # Capture our virt IP tag data and save it to our dictionary
+                                        break    # Break our loop to save processing
+                                    # If none or selected
+                                    else:
+                                        virtIps["virtual_ips"][virtIpId][tg] = ""    # Assign empty string as default
+                            # If we did not found our expected tags assume default
+                            else:
+                                virtIps["virtual_ips"][virtIpId][tg] = ""    # Assign empty string as default
+                        # Check if our NOEXPAND option is enabled
+                        if "<input name=\"noexpand\"" in getAdvVirtIpData["text"]:
+                            virtIps["virtual_ips"][virtIpId]["noexpand"] = "yes" if "checked=\"checked\"" in getAdvVirtIpData["text"].split("<input name=\"noexpand\"")[1].split("</label>")[0] else ""    # Assign our NOEXPAND option to our dictionary
+                        # If expected tag does not exist, assume default
+                        else:
+                            virtIps["virtual_ips"][virtIpId]["noexpand"] = ""
+                        # Check for our DESCRIPTION value
+                        if "name=\"descr\"" in getAdvVirtIpData["text"]:
+                            virtIps["virtual_ips"][virtIpId]["descr"] = getAdvVirtIpData["text"].split("name=\"descr\"")[1].split("value=\"")[1].split("\"")[0]    # Save our description to the dictionary
+                        # If no tag was found return default
+                        else:
+                            virtIps["virtual_ips"][virtIpId]["descr"] = ""
+                        # Return our success exit code
+                        virtIps["ec"] = 0
+                    # Break the loop and return error if ID is not valid. This indiciates that we incorrectly parse the output (or their version of pfSense is unsupported)
+                    else:
+                        virtIps["ec"] = 2    # Return error exit code
+                        break    # Break our loop to exit the function
+    # Return our dictionary
+    return virtIps
+
 # main() is the primary function that maps arguments to other functions
 def main():
     # Local Variables
@@ -2450,6 +2821,81 @@ def main():
                 # If we did not pass in the correct number of arguments
                 else:
                     print(get_exit_message("invalid_syntax", pfsenseServer, pfsenseAction, "", ""))    # Print our error message
+            # Assigns functions for --read-users
+            elif pfsenseAction == "--read-users":
+                # Action variables
+                userFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                userData = get_users(pfsenseServer, user, key)    # Pull our user data
+                idHeader = structure_whitespace("ID",5,"-", False) + " "   # Create our ID header
+                usHeader = structure_whitespace("USERNAME",25,"-", False) + " "    # Create our username header
+                fnHeader = structure_whitespace("FULL NAME",20,"-", True) + " "    # Create our full name header
+                enHeader = structure_whitespace("ENABLED",8,"-", True) + " "    # Create our enabled header
+                pvHeader = structure_whitespace("PRIVILEGE",10,"-", True) + " "    # Create our privilege header
+                gpHeader = structure_whitespace("GROUPS",30,"-", True) + " "    # Create our privilege header
+                header = idHeader + usHeader + fnHeader + enHeader + pvHeader + gpHeader    # Piece our header together
+                # Check that we were able to pull our user data successfully
+                if userData["ec"] == 0:
+                    # Check if user only wants to display data for one username
+                    if userFilter.startswith(("--username=","-un=")):
+                        userExp = userFilter.replace("--username=", "").replace("-un=","")  # Remove our filter identifier to capture our username expression
+                        # Check that we have data for the given username
+                        if userExp in userData["users"]:
+                            print(structure_whitespace("Username:",20," ",True) + userData["users"][userExp]["username"])    # Print username
+                            print(structure_whitespace("Full name:",20," ",True) + userData["users"][userExp]["full_name"])   # Print our user full name
+                            print(structure_whitespace("ID:",20," ",True) + userData["users"][userExp]["id"])   # Print our user id
+                            print(structure_whitespace("Enabled:",20," ",True) + "Yes") if userData["users"][userExp]["disabled"] != "yes" else print(structure_whitespace("Enabled:",20," ",True) + "No")  # Print our enabled value
+                            print(structure_whitespace("Created-by:",20," ",True) + userData["users"][userExp]["type"])   # Print our user type
+                            print(structure_whitespace("Expiration:",20," ",True) + userData["users"][userExp]["expiration"]) if userData["users"][userExp]["expiration"] != "" else None  # Print our expiration date
+                            print(structure_whitespace("Custom UI:",20," ",True) + "Yes") if userData["users"][userExp]["custom_ui"] != "yes" else print(structure_whitespace("Custom UI:",20," ",True) + "No")  # Print our enabled value
+                            # Loop through each of our groups and print it's values
+                            groupStr = ""
+                            for g in userData["users"][userExp]["groups"]:
+                                groupStr = groupStr + g + ", "   # Concentrate our strings together
+                            print(structure_whitespace("Groups:",20," ",True) + groupStr.rstrip(", "))  # Print header indicate start of group print
+                            print(structure_whitespace("Privilege:",20," ",True) + userData["users"][userExp]["privileges"]["level"])   # Print our privilege level
+                            print(structure_whitespace("Authorized Keys:",20," ",True) + structure_whitespace(userData["users"][userExp]["authorized_keys"],30," ",True))    # Print the start of our authorized keys file
+                            print(structure_whitespace("IPsec Keys:",20," ",True) + structure_whitespace(userData["users"][userExp]["ipsec_keys"],30," ",True))    # Print the start of our IPsec keys file
+                        # If user does not exist
+                        else:
+                            print(get_exit_message("invalid_user",pfsenseServer,pfsenseAction,userExp,""))    # Print error message
+                            sys.exit(1)    # Exit on non-zero
+                    # Check if user wants to print all users
+                    if userFilter.lower() in ("--all","-a","default"):
+                        print(header)    # Print our header
+                        # Loop through our users and print their data
+                        for u,d in userData["users"].items():
+                            loopId = structure_whitespace(d["id"],5," ", True) + " "
+                            loopUs = structure_whitespace(d["username"],25," ", True) + " "
+                            loopFn = structure_whitespace(d["full_name"],20," ", True) + " "
+                            loopEn = structure_whitespace("yes",8," ", True) + " " if d["disabled"] != "yes" else structure_whitespace("no",8," ", True) + " "
+                            loopPv = structure_whitespace(d["privileges"]["level"],10," ", True) + " "
+                            loopGp = structure_whitespace(''.join([str(v) + ", " for v in d["groups"]]).rstrip(", "),30," ", True) + " "
+                            print(loopId + loopUs + loopFn + loopEn + loopPv + loopGp)
+                    # If we want to export values as JSON
+                    elif userFilter.startswith(("--json=", "-j=")):
+                        jsonPath = userFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                        jsonName = "pf-readusers-" + currentDate + ".json"    # Assign our default JSON name
+                        # Check if JSON path exists
+                        if os.path.exists(jsonPath):
+                            # Open an export file and save our data
+                            jsonExported = export_json(userData["users"], jsonPath, jsonName)
+                            # Check if the file now exists
+                            if jsonExported:
+                                print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                            else:
+                                print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                    # If we did not pass in a valid filter
+                    else:
+                        print(get_exit_message("invalid_filter",pfsenseServer,pfsenseAction,userFilter,""))
+                        sys.exit(1)
+                # If we could not pull our user data, return error
+                else:
+                    print(get_exit_message(userData["ec"],pfsenseServer,pfsenseAction,"",""))   # Print error
+                    sys.exit(userData["ec"])    # Exit on our return code
+
             # If user is trying to add an auth server, gather required configuration data from user
             elif pfsenseAction == "--add-ldapserver":
                 # Local variables
@@ -2736,6 +3182,84 @@ def main():
                 else:
                     print("Error: Invalid syntax - `pfsense-automator <pfSense IP or FQDN> --modify-alias <alias name> <alias values>`")
                     sys.exit(1)
+
+            # Assign functions for flag --read-virtual-ip
+            elif pfsenseAction == "--read-virtual-ips":
+                # Action variables
+                vipFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                vipTable = get_virutal_ips(pfsenseServer, user, key)    # Get our virtual IP configuration
+                idHead = structure_whitespace("#", 5, "-", True) + " "    # Format our ID header value
+                subnetHead = structure_whitespace("SUBNET", 20, "-", True) + " "    # Format our subnet header value
+                typeHead = structure_whitespace("TYPE", 10, "-", True) + " "    # Format our type header value
+                ifaceHead = structure_whitespace("INTERFACE", 20, "-", True) + " "    # Format our interface header value
+                descrHead = structure_whitespace("DESCRIPTION", 30, "-", True) + " "    # Format our description header value
+                header = idHead + subnetHead + typeHead + ifaceHead + descrHead    # Format our print header
+                # Check that we did not receive an error pulling the data
+                if vipTable["ec"] == 0:
+                    # Loop through each value in our dictionary
+                    counter = 0    # Assign a loop counter
+                    for key,value in vipTable["virtual_ips"].items():
+                        id = structure_whitespace(str(key), 5, " ", True) + " "    # Get our entry number
+                        subnet = structure_whitespace(value["subnet"] + "/" + value["subnet_bits"], 20, " ", True) + " "    # Get our subnet in CIDR form
+                        type = structure_whitespace(value["type"], 10, " ", True) + " "    # Get our type value
+                        iface = structure_whitespace(value["interface"], 20, " ", True) + " "    # Get our interface value
+                        descr = structure_whitespace(value["descr"], 30, " ", True) + " "    # Get our description value
+
+                        # Check if user passed in the ALL filter
+                        if vipFilter.upper() in ["-A", "--ALL"]:
+                            print(header) if counter == 0 else None  # Print our header if we are just starting loop
+                            print(id + subnet + type + iface + descr)    # Print our data values
+                        # Check if user wants to filter by interface
+                        elif vipFilter.startswith(("-i=","--iface=")):
+                            ifaceExp = vipFilter.replace("-i=","").replace("--iface","")    # Remove our filter identifier to capture our interface expression
+                            print(header) if counter == 0 else None  # Print our header if we are just starting loop
+                            # Check that our interface matches our interface expression
+                            if value["interface"].startswith(ifaceExp):
+                                print(id + subnet + type + iface + descr)    # Print our data values
+                        # Check if user wants to filter by type
+                        elif vipFilter.startswith(("-t=","--type=")):
+                            typeExp = vipFilter.replace("-t=","").replace("--type","")    # Remove our filter identifier to capture our interface expression
+                            print(header) if counter == 0 else None  # Print our header if we are just starting loop
+                            # Check that our interface matches our interface expression
+                            if value["type"] == typeExp:
+                                print(id + subnet + type + iface + descr)    # Print our data values
+                         # Check if user wants to filter by subnet
+                        elif vipFilter.startswith(("-s=","--subnet=")):
+                            subnetExp = vipFilter.replace("-s=","").replace("--subnet","")    # Remove our filter identifier to capture our interface expression
+                            print(header) if counter == 0 else None  # Print our header if we are just starting loop
+                            # Check that our interface matches our interface expression
+                            if subnet.startswith(subnetExp):
+                                print(id + subnet + type + iface + descr)    # Print our data values
+                        # If we want to export values as JSON
+                        elif vipFilter.startswith(("--json=", "-j=")):
+                            jsonPath = vipFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                            jsonName = "pf-readvirtip-" + currentDate + ".json"    # Assign our default JSON name
+                            # Check if JSON path exists
+                            if os.path.exists(jsonPath):
+                                # Open an export file and save our data
+                                jsonExported = export_json(vipTable["virtual_ips"], jsonPath, jsonName)
+                                # Check if the file now exists
+                                if jsonExported:
+                                    print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                                    break    # Break the loop as we only need to perform this function once
+                                else:
+                                    print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                    sys.exit(1)
+                            # Print error if path does not exist
+                            else:
+                                print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # If we did not recognize the requested filter print our error message
+                        else:
+                            print(get_exit_message("invalid_filter", pfsenseServer, pfsenseAction, vipFilter, ""))
+                            sys.exit(1)    # Exit on non-zero status
+                        counter = counter + 1  # Increase our counter
+                # If we could not pull our virtual IP data
+                else:
+                    print(get_exit_message(vipTable["ec"],pfsenseServer,pfsenseAction,"",""))    # Print error message
+                    sys.exit(vipTable["ec"])    # Exit on non-zero
             # Assign functions for flag --modify-alias
             elif pfsenseAction == "--read-sslcerts":
                 verbosity = thirdArg    # Assign our verbosity mode to thirdArgs value
