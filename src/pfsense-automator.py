@@ -384,6 +384,22 @@ def get_exit_message(ec, server, command, data1, data2):
             "export_success" : "Successfully exported Virtual IP data to " + data1,
             "export_fail" : "Failed to export Virtual IP data as JSON"
         },
+        # Error/success messages for --add-virtual-ip
+        "--add-virtual-ip" : {
+            0 : "Successfully added virtual IP `" + data1 + "`",
+            2 : "Error: Unexpected error adding virtual IP. It may conflict with an existing IP",
+            3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_mode": "Error: Unknown virtual IP type `" + data1 + "`. Expected `ipalias`, `carp`, `proxyarp` or `other`",
+            "invalid_iface" : "Error: Interface `" + data1 + "` does not exist",
+            "invalid_subnet" : "Error: Invalid subnet CIDR `" + data1 + "`",
+            "invalid_expand" : "Error: Unknown IP expansion option `" + data1 + "`. Expected `yes` or `no`",
+            "invalid_adv" : "Error: Invalid advertisements - BASE: `" + data1 + "` SKEW: `"+ data2 + "`. Expected value 0-254",
+            "invalid_vhid" : "Error: Invalid VHID `" + data1 + "`. Expected value 1-255",
+            "vhid_exists" : "Error: VHID `" + data1 + "` already exists on interface `" + data2 + "`"
+        },
         # Error/success messages for --set-wc-sslcert
         "--set-wc-sslcert" : {
             0 : "Successfully changed WebConfigurator SSL certificate to `" + data1 + "`",
@@ -2568,7 +2584,7 @@ def modify_firewall_alias(server, user, key, aliasName, newValues):
     return aliasModded
 
 # get_virtual_ips() reads the configured virtual IPs from firwall_virtual_ip.php
-def get_virutal_ips(server, user, key):
+def get_virtual_ips(server, user, key):
     # Local variables
     virtIps = {"ec" : 2, "virtual_ips" : {}}    # Pre-define our dictionary to track alias values and errors
     url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
@@ -2608,6 +2624,9 @@ def get_virutal_ips(server, user, key):
                                 if "checked=\"checked\"" in type:
                                     virtIps["virtual_ips"][virtIpId]["type"] = type.split("value=\"")[1].split("\"")[0]    # Split our type value and add it to the dictionary
                                     break    # Break our loop to save processing
+                                # Assume default if no type is selected
+                                else:
+                                    virtIps["virtual_ips"][virtIpId]["type"] = ""  # Assign empty string as default
                         # If we do not have the necessary tags, return default
                         else:
                             virtIps["virtual_ips"][virtIpId]["type"] = ""    # Assign empty string as default
@@ -2673,6 +2692,68 @@ def get_virutal_ips(server, user, key):
                         break    # Break our loop to exit the function
     # Return our dictionary
     return virtIps
+
+# add_virtual_ip() adds a new virtual IP to pfSense
+def add_virtual_ip(server, user, key, mode, iface, subnet, subnetBit, expansion, vipPasswd, vhid, advbase, advSkew, descr):
+    # Local variables
+    vipAdded = 2    # Initialize our function return code (default 2 as error encountered)
+    currentVips = get_virtual_ips(server,user,key)    # Pull our current Virtual IP configuration
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
+    # Check that we successfully pulled our existing virtual IP configuration
+    if currentVips["ec"] == 0:
+        # VHID AUTO-DETECTION: Determine our next available VHID for auto specification
+        usedVhids = []    # Initialize our list of occupied VHIDs
+        autoVhid = ""    # Initialize our auto detected VHID
+        for id,data in currentVips["virtual_ips"].items():
+            # Ensure that this VHID is configured for our requested interface
+            if iface == data["interface"]:
+                # Save our VHID value to our list
+                usedVhids.append(data["vhid"])
+        # Loop through our taken VHIDs and return one that is not taken
+        for i in range(256):
+            # Check that our iteration is valid
+            if 1 <= i <= 255:
+                # Check if this VHID is already taken
+                if str(i) not in usedVhids:
+                    autoVhid = str(i)    # Assign our auto-detected VHID
+                    break    # Break the loop as we only need one value
+        # Convert our Python variables to our POST data paramemters to create a vIP POST dictionary
+        vipPostDict = {
+            "__csrf_magic" : get_csrf_token(url + "/firewall_virtual_ip_edit.php","GET"),
+            "mode" : mode,
+            "interface" : iface,
+            "type" : "network",
+            "subnet" : subnet,
+            "subnet_bits" : subnetBit,
+            "noexpand" : expansion if expansion != "" else None,
+            "password" : vipPasswd,
+            "password_confirm": vipPasswd,
+            "vhid" : vhid if vhid != "auto" else autoVhid,
+            "advbase" : advbase,
+            "advskew" : advSkew,
+            "descr" : descr,
+            "save" : "Save"
+        }
+        # Create a dictionary of POST values to apply our virtual IP change
+        vipSavePostDict = {
+            "__csrf_magic" : get_csrf_token(url + "/firewall_virtual_ip.php","GET"),
+            "apply" : "Apply Changes"
+        }
+        # Make our POST requests
+        postVip = http_request(url + "/firewall_virtual_ip_edit.php", vipPostDict, {}, {}, "POST")
+        saveVip = http_request(url + "/firewall_virtual_ip.php", vipSavePostDict, {}, {}, "POST")
+        # Check that our new virtual IP is now in our configuration
+        newVips = get_virtual_ips(server,user,key)    # Pull our current Virtual IP configuration
+        for id,data in newVips["virtual_ips"].items():
+            # Check if our added values exist in this dictionary
+            if data["subnet"] == subnet and data["subnet_bits"] == subnetBit and data["type"] == mode:
+                vipAdded = 0    # Return our success exit code
+                break    # Break the loop as we found our new entry
+    # If we encountered an error pulling the existing virtual IPs
+    else:
+        vipAdded = currentVips["ec"]    # Save the exit code from our get_virtual_ips() function to this functions exit code
+    # Return our exit code
+    return vipAdded
 
 # main() is the primary function that maps arguments to other functions
 def main():
@@ -3189,12 +3270,12 @@ def main():
                 vipFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
-                vipTable = get_virutal_ips(pfsenseServer, user, key)    # Get our virtual IP configuration
+                vipTable = get_virtual_ips(pfsenseServer, user, key)    # Get our virtual IP configuration
                 idHead = structure_whitespace("#", 5, "-", True) + " "    # Format our ID header value
                 subnetHead = structure_whitespace("SUBNET", 20, "-", True) + " "    # Format our subnet header value
                 typeHead = structure_whitespace("TYPE", 10, "-", True) + " "    # Format our type header value
-                ifaceHead = structure_whitespace("INTERFACE", 20, "-", True) + " "    # Format our interface header value
-                descrHead = structure_whitespace("DESCRIPTION", 30, "-", True) + " "    # Format our description header value
+                ifaceHead = structure_whitespace("INTERFACE", 15, "-", True) + " "    # Format our interface header value
+                descrHead = structure_whitespace("DESCRIPTION", 45, "-", True) + " "    # Format our description header value
                 header = idHead + subnetHead + typeHead + ifaceHead + descrHead    # Format our print header
                 # Check that we did not receive an error pulling the data
                 if vipTable["ec"] == 0:
@@ -3204,9 +3285,8 @@ def main():
                         id = structure_whitespace(str(key), 5, " ", True) + " "    # Get our entry number
                         subnet = structure_whitespace(value["subnet"] + "/" + value["subnet_bits"], 20, " ", True) + " "    # Get our subnet in CIDR form
                         type = structure_whitespace(value["type"], 10, " ", True) + " "    # Get our type value
-                        iface = structure_whitespace(value["interface"], 20, " ", True) + " "    # Get our interface value
-                        descr = structure_whitespace(value["descr"], 30, " ", True) + " "    # Get our description value
-
+                        iface = structure_whitespace(value["interface"], 15, " ", True) + " "    # Get our interface value
+                        descr = structure_whitespace(value["descr"], 45, " ", True) + " "    # Get our description value
                         # Check if user passed in the ALL filter
                         if vipFilter.upper() in ["-A", "--ALL"]:
                             print(header) if counter == 0 else None  # Print our header if we are just starting loop
@@ -3260,7 +3340,144 @@ def main():
                 else:
                     print(get_exit_message(vipTable["ec"],pfsenseServer,pfsenseAction,"",""))    # Print error message
                     sys.exit(vipTable["ec"])    # Exit on non-zero
-            # Assign functions for flag --modify-alias
+
+            # Assign functions for flag --add-virtual-ip
+            elif pfsenseAction == "--add-virtual-ip":
+                # Action variables
+                vipModes = ["ipalias","carp","proxyarp","other"]    # Save a list of our available Virtual IP modes
+                vipMode = filter_input(thirdArg) if len(sys.argv) > 3 else input("Virtual IP type " + str(vipModes).replace('\'',"") + ": ")    # Gather user input for virtual IP mode
+                vipIface = filter_input(fourthArg) if len(sys.argv) > 4 else input("Interface: ")    # Gather user input for virtual IP interface
+                vipSubnet = fifthArg if len(sys.argv) > 5 else input("Virtual IP subnet: ")    # Gather user input for virtual IP subnet
+                vipExpand = filter_input(sixthArg) if len(sys.argv) > 6 else input("Disable IP expansion [yes,no]: ")    # Gather user input for IP expansion option
+                vipPasswd = seventhArg if len(sys.argv) > 7 else None    # If a seventh argument is passed, save it as the vip password
+                vipPasswd = getpass.getpass("Virtual IP Password: ") if vipPasswd is None and vipMode.lower() == "carp" else vipPasswd    # If interactive mode is initiated, prompt user for vip password if mode is carp
+                vipVhid = eighthArg if len(sys.argv) > 8 else None    # If a eighth argument is passed, save it as the vip vhid
+                vipVhid = input("VHID Group [1-255,auto]: ") if vipVhid is None and vipMode.lower() == "carp" else vipVhid    # If interactive mode is initiated, prompt user for vip vhid if mode is carp
+                vipAdvBase = ninthArg if len(sys.argv) > 9 else None    # If a ninth argument is passed, save it as the vip advbase
+                vipAdvBase = input("Advertising Base [1-254,default]: ") if vipAdvBase is None and vipMode.lower() == "carp" else vipAdvBase    # If interactive mode is initiated, prompt user for vip advbase if mode is carp
+                vipAdvBase = 1 if vipAdvBase.lower() == "default" else vipAdvBase    # If user requests default value, assign 1, otherwise retain existing value
+                vipAdvSkew = tenthArg if len(sys.argv) > 10 else None    # If a ninth argument is passed, save it as the vip advskew
+                vipAdvSkew = input("Advertising Skew [0-254,default]: ") if vipAdvSkew is None and vipMode.lower() == "carp" else vipAdvSkew    # If interactive mode is initiated, prompt user for vip advskew if mode is carp
+                vipAdvSkew = 0 if vipAdvSkew.lower() == "default" else vipAdvSkew    # If user requests default value, assign 1, otherwise retain existing value
+                vipDescr = eleventhArg if len(sys.argv) > 11 else input("Virtual IP Description: ")    # Get user input for description
+                user = thirteenthArg if twelfthArg == "-u" and thirteenthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = fifteenthArg if fourteenthArg == "-p" and fifteenthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                existingVips = get_virtual_ips(pfsenseServer,user,key)    # Pull our existing virtual IPs
+                existingIfaces = get_interfaces(pfsenseServer,user,key)    # Pull our existing interfaces
+                # INPUT VALIDATION
+                # Check if our VIP mode is valid
+                if vipMode.lower() in vipModes:
+                    # Check if our interface is valid
+                    ifFound = False  # Assign a bool to track whether a match was found
+                    if vipIface in existingIfaces["ifaces"]:
+                        ifFound = True  # Assign true value to indicate we found a match
+                    # If the user did not pass in the interfaces pfid, check our descriptive id and physical id
+                    else:
+                        # Loop through each interface and check alternate IDs
+                        for pfId,data in existingIfaces["ifaces"].items():
+                            # Check if input matches our physical iface ID
+                            if vipIface == data["id"]:
+                                vipIface = pfId    # Assign our interface to the PF ID version of this interface
+                                ifFound = True    # Assign true value to indicate we found a match
+                                break    # Break our loop as our match has been found
+                            # Check if our input matches our descriptive interface ID
+                            elif vipIface == data["descr"]:
+                                vipIface = pfId  # Assign our interface to the PF ID version of this interface
+                                ifFound = True  # Assign true value to indicate we found a match
+                                break  # Break our loop as our match has been found
+                    # Check if we were able to find our interface using alternate IDs
+                    if ifFound:
+                        # Check if our subnet is valid
+                        if "/" in vipSubnet:
+                            parseSubnet = vipSubnet.split("/")
+                            # Check if our list is an expected size
+                            if len(parseSubnet) == 2:
+                                vipIpAddr = parseSubnet[0]    # Our first list item will be our IP address
+                                vipSubnetBits = parseSubnet[1]    # Our second list item will be our subnet bit count
+                                # Check if our IP is valid
+                                if validate_ip(vipIpAddr):
+                                    # Check if our subnet is valid
+                                    if vipSubnetBits.isdigit():
+                                        if 1 <= int(vipSubnetBits) <= 32:
+                                            # Check our vipExpand input
+                                            if vipExpand in ["yes","no"]:
+                                                vipExpand.replace("no","")    # Remove no from the string as POST requires empty string later on
+                                                # Check our vhid input
+                                                vhidValid = False    # Assign a bool to track if our VHID input is valid
+                                                # Check if our input is "auto"
+                                                if vipVhid == "auto" or vipVhid is None:
+                                                    vhidValid = True  # Our value is valid
+                                                # Check that our values are valid
+                                                elif vipVhid.isdigit():
+                                                    # Check if our integer is within range
+                                                    if 1 <= int(vipVhid) <= 255:
+                                                        # Loop through to ensure our value is not already taken
+                                                        for id,data in existingVips["virtual_ips"].items():
+                                                            # Return error and exit if our vhid value is a duplicate
+                                                            if vipVhid == data["vhid"] and vipIface == data["interface"]:
+                                                                print(get_exit_message("vhid_exists",pfsenseServer,pfsenseAction,vipVhid,vipIface))    # Print error msg
+                                                                sys.exit(1)    # Exit on non-zero
+                                                        vhidValid = True    # Our value is valid if it survived the loop
+                                                # If our input is not expected, print error msg and exit on non-zero
+                                                else:
+                                                    print(get_exit_message("invalid_vhid",pfsenseServer,pfsenseAction,vipVhid,""))
+                                                    sys.exit(1)
+                                                # Check if our vhidValid is true
+                                                if vhidValid:
+                                                    vipAdvValid = False    # Assign a bool to track if our advertisements are valid
+                                                    # Check if our input is None
+                                                    if vipAdvBase is None and vipAdvSkew is None:
+                                                        vipAdvValid = True  # Our input is valid
+                                                    # Check if our VHID base and skew advertisements are valid
+                                                    elif vipAdvBase.isdigit() and vipAdvSkew.isdigit():
+                                                        # Check if our integers are valid
+                                                        if 1 <= int(vipAdvBase) <= 254 and 0 <= int(vipAdvSkew) <= 254:
+                                                            vipAdvValid = True    # Our input is valid
+                                                        # If our input is invalid
+                                                        else:
+                                                            print(get_exit_message("invalid_adv",pfsenseServer,pfsenseAction,vipAdvBase,vipAdvSkew))    # Print error msg
+                                                            sys.exit(1)    # Exit on non-zero
+
+                                                    # Check if our input is valid
+                                                    if vipAdvValid:
+                                                        # Run our POST function to add the vitrual IP
+                                                        postVip = add_virtual_ip(pfsenseServer,user,key,vipMode,vipIface,vipIpAddr,vipSubnetBits,vipExpand,vipPasswd,vipVhid,vipAdvBase,vipAdvSkew,vipDescr)
+                                                        # Print our exit message and exit on function return code
+                                                        print(get_exit_message(postVip,pfsenseServer,pfsenseAction,vipSubnet,""))
+                                                        sys.exit(postVip)
+                                            # If our vipExpand option is invalid return error and exit on non-zero
+                                            else:
+                                                print(get_exit_message("invalid_expand",pfsenseServer,pfsenseAction,vipExpand,""))
+                                                sys.exit(1)
+                                        # If our subnet bit count is out of range
+                                        else:
+                                            print(get_exit_message("invalid_subnet",pfsenseServer,pfsenseAction,vipSubnet,""))    # Print error msg
+                                            sys.exit(1)    # Exit on non-zero
+                                    # If our subnet bit count is invalid
+                                    else:
+                                        print(get_exit_message("invalid_subnet",pfsenseServer,pfsenseAction,vipSubnet,""))    # Print error msg
+                                        sys.exit(1)    # Exit on non-zero
+                                # If our IP section of our CIDR is invalid
+                                else:
+                                    print(get_exit_message("invalid_subnet",pfsenseServer,pfsenseAction,vipSubnet,""))    # Print error msg
+                                    sys.exit(1)    # Exit on non-zero
+                            # If our CIDR could not be split correctly
+                            else:
+                                print(get_exit_message("invalid_subnet",pfsenseServer,pfsenseAction,vipSubnet,""))    # Print error msg
+                                sys.exit(1)    # Exit on non-zero
+                        # If our CIDR is invalid
+                        else:
+                            print(get_exit_message("invalid_subnet",pfsenseServer,pfsenseAction,vipSubnet,""))    # Print error msg
+                            sys.exit(1)    # Exit on non-zero
+                    # If we did not find a match, return error and exit on non-zero
+                    else:
+                        print(get_exit_message("invalid_iface",pfsenseServer,pfsenseAction,vipIface,""))
+                        sys.exit(1)
+                # If our mode is invalid
+                else:
+                    print(get_exit_message("invalid_mode",pfsenseServer,pfsenseAction,vipMode,""))
+                    sys.exit(1)
+            # Assign functions for flag --read-sslcert
             elif pfsenseAction == "--read-sslcerts":
                 verbosity = thirdArg    # Assign our verbosity mode to thirdArgs value
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one

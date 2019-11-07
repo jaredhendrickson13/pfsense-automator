@@ -320,6 +320,18 @@ Commands
         - `--subnet` (`-s`) : Return virtual IPs matching a subnet expression (e.g. `--subnet=127.0.0.1/32`) _Note: this filter matches entries that start with your expression, the more specific your expression the more specific your results will be_
         - `--json=<directory_path>` : Exports virtual IP data to a JSON file given an existing directory
 
+- `--add-virtual-ip` : Adds a new virtual IP to firewall_virtual_ip.php
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-virtual-ip <type> <interface> <cidr> <disable_expand> <vhid_group> <adv_base> <adv_skew> <descr>`
+    - **Arguments**:
+        - `<type>` : Specify the virtual IP type (`ipalias`, `carp`, `proxyarp`, `other`) _Note: using interactive mode will only request input for values your requested virtual IP type needs_
+        - `<interface>` : Specify the interface to advertise the virtual IP from 
+        - `<cidr>` : Specify the subnet CIDR of the virutal IP address you are creating (e.g. `192.168.0.1/32`)
+        - `<disable_expand>` : Disable expansion of this entry into IPs on NAT lists (`yes`, `no`)
+        - `<vhid_group>` : Specify the VHID group that the machines will share (`1-255`) _Note: this is only necessary on `carp` virtual IPs, leave as `1` on other virtual IP types_
+        - `<adv_base>` : Specify the advertising frequency base (`1-254`) _Note: this is only necessary on `carp` virtual IPs, leave as `1` on other virtual IP types_
+        - `<adv_skew>` : Specify the advertising frequency skew (`0-254`) _Note: this is only necessary on `carp` virtual IPs, leave as `0` on other virtual IP types_
+        - `<descr>` : Specify a description for your virtual IP
+        
 - `--modify-alias` : Modifies an existing Firewall Alias. Existing entries will be overwritten. 
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --modify-alias <alias name> <IPs or hostnames>`
     - **Arguments**:
