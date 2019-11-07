@@ -372,6 +372,18 @@ def get_exit_message(ec, server, command, data1, data2):
             15: globalPermissionErrMsg,
             "invalid_syntax" : "Error: Invalid syntax - `pfsense-automator <pfSense IP or FQDN> --modify-alias <alias name> <alias values>`"
         },
+        # Error/success messages for --read-carp-status
+        "--read-carp-status" : {
+            2 : "Error: Unexpected error checking CARP status",
+            3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err" : "Error: export directory `" + data1 + "` does not exist",
+            "export_success" : "Successfully exported CARP data to " + data1,
+            "export_fail" : "Failed to export CARP data as JSON"
+        },
         # Error/success messages for --read-virtual-ip
         "--read-virtual-ips" : {
             2 : "Error: Unknown error gathering virtual IP data",
@@ -2652,7 +2664,7 @@ def get_virtual_ips(server, user, key):
                             virtIps["virtual_ips"][virtIpId]["subnet"] = virtIpAddrData.split("value=\"")[1].split("\"")[0]    # Capture our configured IP address value and save it to our dictionary
                         # If we did not found our expected tags assume default
                         else:
-                            virtIps["virtual_ips"][virtIpId]["ip"] = ""    # Assign empty string as default
+                            virtIps["virtual_ips"][virtIpId]["subnet"] = ""    # Assign empty string as default
                         # Loop through our SELECT option values to reduce redundant code
                         selectTags = ["subnet_bits","vhid","advbase","advskew"]    # Assign a list of select tags to loop through and pull values from
                         for tg in selectTags:
@@ -2754,6 +2766,62 @@ def add_virtual_ip(server, user, key, mode, iface, subnet, subnetBit, expansion,
         vipAdded = currentVips["ec"]    # Save the exit code from our get_virtual_ips() function to this functions exit code
     # Return our exit code
     return vipAdded
+
+# get_status_carp() reads the current CARP status from status_carp.php
+def get_status_carp(server, user, key):
+    # Local variables
+    carp = {"ec" : 2, "carp" : {"status" : "inactive", "maintenance_mode" : False, "carp_interfaces" : {}, "pfsync_nodes" : []}}    # Pre-define our dictionary to track CARP values and errors
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
+    carpUnconfiguredMsg = "No CARP interfaces have been defined."    # Define the message pfSense displays when no CARP interfaces are configured
+    carpEnabledMsg = "name=\"disablecarp\" value=\"Temporarily Disable CARP\""    # Define the message pfSense displays when CARP is enabled
+    carpDisabledMsg = "name=\"disablecarp\" value=\"Enable CARP\""    # Define the message pfSense displays when CARP is disabled
+    carpMaintenanceEnabled = "id=\"carp_maintenancemode\" value=\"Leave Persistent CARP Maintenance Mode\""    # Define the message pfSense displays when CARP maintenance mode is enabled
+    carpMaintenanceDisabled = "id=\"carp_maintenancemode\" value=\"Enter Persistent CARP Maintenance Mode\""    # Define the message pfSense displays when CARP maintenance mode is disabled
+     # Check for errors and assign exit codes accordingly
+    carp["ec"] = 10 if check_dns_rebind_error(url) else carp["ec"]    # Return exit code 10 if dns rebind error found
+    carp["ec"] = 6 if not validate_platform(url) else carp["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if carp["ec"] == 2:
+        carp["ec"] = 3 if not check_auth(server, user, key) else carp["ec"]    # Return exit code 3 if we could not sign in
+    # Check that authentication succeeded
+    if carp["ec"] == 2:
+        # Check that we had permissions for this page
+        getCarpStatusData = http_request(url + "/status_carp.php", {}, {}, {}, "GET")    # Save our GET HTTP response
+        if check_permissions(getCarpStatusData):
+            # Check that we have a CARP configuration to parse
+            if carpUnconfiguredMsg not in getCarpStatusData["text"]:
+                # Check if CARP is enabled or disabled
+                carp["carp"]["status"] = "enabled" if carpEnabledMsg in getCarpStatusData["text"] else carp["carp"]["status"]    # Determine whether CARP is enabled and save the value if it is
+                carp["carp"]["status"] = "disabled" if carpDisabledMsg in getCarpStatusData["text"] else carp["carp"]["status"]    # Determine whether CARP is disabled and save the value
+                # Check if CARP is in maintenance mode
+                carp["carp"]["maintenance_mode"] = True if carpMaintenanceEnabled in getCarpStatusData["text"] else carp["carp"]["maintenance_mode"]    # Determine whether CARP maintenance mode is enabled and save the value if it is
+                carp["carp"]["maintenance_mode"] = False if carpMaintenanceDisabled in getCarpStatusData["text"] else carp["carp"]["maintenance_mode"]    # Determine whether CARP maintenance mode is disabled and save the value
+                # Ensure we have a CARP table
+                if "<tbody>" in getCarpStatusData["text"]:
+                    carpTableData = getCarpStatusData["text"].split("<tbody>")[1].split("</tbody>")[0]    # Capture all data between our tbody tags
+                    carpTableRows = carpTableData.split("<tr>")[1:]    # Split table into a list of data rows
+                    # Loop through our data rows and parse our data
+                    counter = 0    # Create a loop counter to track loop iteration
+                    for r in carpTableRows:
+                        rowData = r.split("<td>")  # Save our row data into a list of data points
+                        carp["carp"]["carp_interfaces"][counter] = {}    # Create a nested dictionary for each CARP interface in our table
+                        carp["carp"]["carp_interfaces"][counter]["interface"] = rowData[1].split("@")[0]    # Split our first table data field to capture our interface ID
+                        carp["carp"]["carp_interfaces"][counter]["vhid"] = rowData[1].split("@")[1].replace("</td>","").replace("\t","").replace("\n","")    # Split our first table data field to capture our VHID group
+                        carp["carp"]["carp_interfaces"][counter]["cidr"] = rowData[2].split("</td>")[0].replace("\t","").replace("\n","")    # Split our second table data field to capture our CARP CIDR
+                        carp["carp"]["carp_interfaces"][counter]["ip"] = carp["carp"]["carp_interfaces"][counter]["cidr"].split("/")[0]    # Split our second table data field to capture our CARP IP address
+                        carp["carp"]["carp_interfaces"][counter]["subnet_bits"] = carp["carp"]["carp_interfaces"][counter]["cidr"].split("/")[1]    # Split our second table data field to capture our CARP subnet
+                        carp["carp"]["carp_interfaces"][counter]["status"] = rowData[3].split("</i>&nbsp;")[1].split("</td>")[0].lower()    # Split our third table data field to capture our CARP status
+                        counter = counter + 1    # Increase our counter
+                # Check pfSync node IDs
+                if "<br />pfSync nodes:<br /><pre>" in getCarpStatusData["text"]:
+                    carp["carp"]["pfsync_nodes"] = getCarpStatusData["text"].split("<br />pfSync nodes:<br /><pre>")[1].split("</pre>")[0].split("\n")[:-1]    # Split each of our nodes into a list
+            # Update our exit code to success
+            carp["ec"] = 0
+        # If we did not have permissions
+        else:
+            carp["ec"] = 15    # Return exit code 15 (permissions denied)
+    # Return our dictionary
+    return carp
 
 # main() is the primary function that maps arguments to other functions
 def main():
@@ -3593,6 +3661,105 @@ def main():
                 else:
                     print(get_exit_message("invalid_vlan", pfsenseServer, pfsenseAction, vlanId, ""))
                     sys.exit(1)    # Exit on non-zero
+
+            # Assign functions for flag --read-carp-status
+            elif pfsenseAction == "--read-carp-status":
+                # Action variables
+                carpFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                carpStatus = get_status_carp(pfsenseServer, user, key)    # Pull our CARP status dictionary
+                idHeader = structure_whitespace("ID",5,"-",True) + " "    # Format our ID header
+                vipHeader = structure_whitespace("VIRTUAL IP",20,"-",True) + " "    # Format our virtual IP header
+                statusHeader = structure_whitespace("STATUS",10,"-",True) + " "    # Format our status header
+                ifaceHeader = structure_whitespace("INTERFACE",12,"-",True) + " "    # Format our interface header
+                vhidHeader = structure_whitespace("VHID",12,"-",True) + " "    # Format our VHID header
+                header = idHeader + vipHeader + ifaceHeader + vhidHeader + statusHeader    # Concentrate our header string
+                # Check that we did not recieve an error pulling the CARP status
+                if carpStatus["ec"] == 0:
+                    # If user passes in nodes filter, print all pfsync node IDs
+                    if carpFilter.lower() in ["--nodes","-n"]:
+                        print("PFSYNC NODES")    # Print our pfsync nodes
+                        print("------------")
+                        # Loop through each value in our list
+                        for node in carpStatus["carp"]["pfsync_nodes"]:
+                            print(node)    # Print our node ID
+                    # If user passes in filter general or all
+                    elif carpFilter.lower() in ["--general","-g"]:
+                        mmStatus = "enabled" if carpStatus["carp"]["maintenance_mode"] else "disabled"    # If maintenance mode is true, set string to "enabled" otherwise "disabled"
+                        print(structure_whitespace("CARP STATUS",37,"-",True))    # Print CARP STATUS header
+                        print(structure_whitespace("Status:",27," ",False) + carpStatus["carp"]["status"])    # Print our status
+                        print(structure_whitespace("Maintenance Mode:",27," ",False) + mmStatus)    # Print our status
+                    # If not either of these options, explore further filters
+                    else:
+                        # Loop through our CARP interfaces and parse their values, print as needed
+                        counter = 0   # Create a loop counter
+                        for id,data in carpStatus["carp"]["carp_interfaces"].items():
+                            carpId = structure_whitespace(str(id),5," ",True) + " "    # Format our CARP ID
+                            virtIp = structure_whitespace(data["cidr"],20," ", True) + " "   # Format our virtual IP data
+                            status = structure_whitespace(data["status"],10," ",True) + " "    # Format our status data
+                            iface = structure_whitespace(data["interface"],12," ",True) + " "    # Format our interface data
+                            vhid = structure_whitespace(data["vhid"],12," ",True) + " "    # Format our vhid data
+                            carpData = carpId + virtIp + iface + vhid + status   # Combine our strings into our dataset
+                            # If user has select all filter
+                            if carpFilter.lower() in ["--all","-a"]:
+                                mmStatus = "enabled" if carpStatus["carp"]["maintenance_mode"] else "disabled"    # If maintenance mode is true, set string to "enabled" otherwise "disabled"
+                                print(structure_whitespace("CARP STATUS",37,"-",True)) if counter == 0 else None    # Print CARP STATUS header
+                                print(structure_whitespace("Status:",27," ",False) + carpStatus["carp"]["status"]) if counter == 0 else None    # Print our status
+                                print(structure_whitespace("Maintenance Mode:",27," ",False) + mmStatus + "\n") if counter == 0 else None    # Print our status
+                                print(header) if counter == 0 else None   # Print our header
+                                print(carpData)    # Print our dataset
+                            # If user has selected subnet filter
+                            elif carpFilter.startswith(("--subnet=","-s=")):
+                                subnetExp = carpFilter.replace("-s=","").replace("--subnet=","")    # Remove our filter identifier to capture our subnet expression
+                                # Check if our subnet matches our expression
+                                if data["cidr"].startswith(subnetExp) or subnetExp == "*":
+                                    print(header) if counter == 0 else None  # Print our header
+                                    print(carpData)    # Print our dataset
+                            # If user has selected interface filter
+                            elif carpFilter.startswith(("--iface=","-i=")):
+                                ifaceExp = carpFilter.replace("-iface=","").replace("-i=","")    # Remove our filter identifier to capture our iface expression
+                                # Check if our iface matches our expression
+                                if data["interface"].lower() == ifaceExp.lower():
+                                    print(header) if counter == 0 else None  # Print our header
+                                    print(carpData)    # Print our dataset
+                            # If user has selected vhidExp filter
+                            elif carpFilter.startswith(("--vhid=","-v=")):
+                                vhidExp = carpFilter.replace("--vhid=","").replace("-v=","")    # Remove our filter identifier to capture our vhidExp expression
+                                # Check if our vhidExp matches our expression
+                                if data["vhid"] == vhidExp:
+                                    print(header) if counter == 0 else None  # Print our header
+                                    print(carpData)    # Print our dataset
+                            # If we want to export values as JSON
+                            elif carpFilter.startswith(("--json=", "-j=")):
+                                jsonPath = carpFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                                jsonName = "pf-readcarp-" + currentDate + ".json"    # Assign our default JSON name
+                                # Check if JSON path exists
+                                if os.path.exists(jsonPath):
+                                    # Open an export file and save our data
+                                    jsonExported = export_json(carpStatus["carp"], jsonPath, jsonName)
+                                    # Check if the file now exists
+                                    if jsonExported:
+                                        print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                                        break    # Break the loop as we only need to perfrom this function once
+                                    else:
+                                        print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                        sys.exit(1)
+                                # Print error if path does not exist
+                                else:
+                                    print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                    sys.exit(1)
+                            # If none of these filters match, return error
+                            else:
+                                print(get_exit_message("invalid_filter",pfsenseServer,pfsenseAction,carpFilter,""))
+                                sys.exit(1)
+                            # Increase our counter
+                            counter = counter + 1
+                # If we did encounter an error pulling our carp status
+                else:
+                    print(get_exit_message(carpStatus["ec"],pfsenseServer,pfsenseAction,"",""))    # Print our error message
+                    sys.exit(carpStatus["ec"])    # Exit on our non-zero code
+
             # Assign functions for flag --read-arp
             elif pfsenseAction == "--read-arp":
                 arpFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string

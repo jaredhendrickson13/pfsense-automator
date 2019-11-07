@@ -320,6 +320,15 @@ Commands
         - `--subnet` (`-s`) : Return virtual IPs matching a subnet expression (e.g. `--subnet=127.0.0.1/32`) _Note: this filter matches entries that start with your expression, the more specific your expression the more specific your results will be_
         - `--json=<directory_path>` : Exports virtual IP data to a JSON file given an existing directory
 
+- `--read-carp-status` : Checks our CARP status
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-virtual-ips <argument>`
+    - **Arguments**:
+        - `--all` (`-a`) : Return all CARP configuration information 
+        - `--nodes` (`-n`) : Return only pfSync node IDs
+        - `--iface` (`-i`) : Return only virtual IPs configured on a specific interface (e.g. `--iface=wan`) _Note: this uses the pf interface ID not the user configured ID_
+        - `--subnet` (`-s`) : Return virtual IPs matching a subnet expression (e.g. `--subnet=127.0.0.1/32`) _Note: this filter matches entries that start with your expression, the more specific your expression the more specific your results will be_
+        - `--json=<directory_path>` : Exports virtual IP data to a JSON file given an existing directory
+
 - `--add-virtual-ip` : Adds a new virtual IP to firewall_virtual_ip.php
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-virtual-ip <type> <interface> <cidr> <disable_expand> <vhid_group> <adv_base> <adv_skew> <descr>`
     - **Arguments**:
