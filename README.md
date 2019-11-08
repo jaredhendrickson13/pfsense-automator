@@ -27,6 +27,18 @@ pfsense-automator can be run either inline (for automation and scriptability) or
 
 Commands
 ------------
+- `--check-auth` : Attempts to sign in using specified credentials. _WARNING: abuse of this function may result in a WebConfigurator lockout_
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --check-auth -u <username> -p <password>` 
+    - **Arguments**:
+        - `-u <username>` : Allows you to pass in the username in the command, leave blank for interactive entry
+        - `-p <password>` : Allows you to pass in a password in the command, leave blank for interactive entry
+
+- `--check-version` : Checks the current installed version of pfSense on the target server. _Note: you must have the version data enabled in /widgets/widgets/system_information.widget.php_
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --check-version -u <username> -p <password>` 
+    - **Arguments**:
+        - `-u <username>` : Allows you to pass in the username in the command, leave blank for interactive entry
+        - `-p <password>` : Allows you to pass in a password in the command, leave blank for interactive entry
+
 - `--read-interfaces` : Reads the current interface configuration _Note: at this time, only IPv4 configurations are available for command line display. If you require IPv6 configurations, please use the `--json` argument. This will contain the IPv6 data_
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-interfaces <argument>`
     - **Arguments**:
@@ -82,6 +94,14 @@ Commands
         - `--serial-communications` (`-sc`) : Return only configuration from the Serial Communications section of /system_advanced_admin.php
         - `--console-options` (`-co`) : Return only configuration from the Console options section of /system_advanced_admin.php
         - `--json=<directory_path>` : Exports Advanced Admin data to a JSON file given an existing directory
+
+- `--read-hasync` : Gathers the current High Availability configuration from system_hasync.php and prints it to your command line or exports as JSON
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-hasync <argument>`
+    - **Arguments**:
+        - `--all` (`-a`) : Returns all available HA Sync configurations
+        - `--pfsync` (`-p`) : Returns only PFSYNC configuration
+        - `--xmlrpc` (`-x`) : Returns only XMLRPC configuration
+        - `--json=<directory_path>` : Exports HA Sync data to a JSON file given an existing directory    
 
 - `--read-users`: Reads current local user database
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-users <argument>`
@@ -346,12 +366,6 @@ Commands
     - **Arguments**:
         - `<alias name>` : Specify which alias you would like to modify, this much match the name exactly
         - `<IPs or hostnames>` : Specify what IPs or hostnames to include in the alias. Multiple entries must be separated by a comma
-
-- `--check-auth` : Attempts to sign in using specified credentials. WARNING: abuse of this function will result in a WebConfigurator lockout
-    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --check-auth -u <username> -p <password>` 
-    - **Arguments**:
-        - `-u <username>` : Allows you to pass in the username in the command, leave blank for interactive entry
-        - `-p <password>` : Allows you to pass in a password in the command, leave blank for interactive entry
 
 - `--add-ldapserver` : Adds a new LDAP authentication server - this may be configured inline or interactively (will prompt for configuration if missing arguments)
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-ldapserver <descr_name> <IP or hostname> <port> <transport> <protocol> <timeout> <search_scope> <base_dn> <auth_container> <ext_query> <query> <bind_anon> <bind_dn> <bind_pw> <template> <user_attr> <group_attr> <member_attr> <rfc2307> <group_obj> <encode> <user_alt> -u <username> -p <password>`

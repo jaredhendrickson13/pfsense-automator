@@ -372,6 +372,26 @@ def get_exit_message(ec, server, command, data1, data2):
             15: globalPermissionErrMsg,
             "invalid_syntax" : "Error: Invalid syntax - `pfsense-automator <pfSense IP or FQDN> --modify-alias <alias name> <alias values>`"
         },
+        # Error/success messages for --check-version
+        "--check-version" : {
+            2 : "Error: Could not determine pfSense version",
+            3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg
+        },
+        # Error/success messages for --read-hasync
+        "--read-hasync" : {
+            2 : "Error: Unexpected error gathering HA Sync data",
+            3 : globalAuthErrMsg,
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err" : "Error: export directory `" + data1 + "` does not exist",
+            "export_success" : "Successfully exported HA Sync data to " + data1,
+            "export_fail" : "Failed to export HA Sync data as JSON"
+        },
         # Error/success messages for --read-carp-status
         "--read-carp-status" : {
             2 : "Error: Unexpected error checking CARP status",
@@ -689,6 +709,39 @@ def get_csrf_token(url, type):
         else:
             csrfToken = ""    # Assign blank CSRF token as none was found
         return csrfToken    # Return our token
+
+# get_pfsense_version() checks the version of pfSense
+def get_pfsense_version(server, user, key):
+    # Local variables
+    pfVersion = {"ec":2,"version":{"installed_version":""}}    # Initialize a dictionary to save version data
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    # Submit our intitial request and check for errors
+    pfVersion["ec"] = 10 if check_dns_rebind_error(url) else pfVersion["ec"]    # Return exit code 10 if dns rebind error found
+    pfVersion["ec"] = 6 if not validate_platform(url) else pfVersion["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if pfVersion["ec"] == 2:
+        pfVersion["ec"] = 3 if not check_auth(server, user, key) else pfVersion["ec"]    # Return exit code 3 if we could not sign in
+    # Check if we encountered any errors before staring
+    if pfVersion["ec"] == 2:
+        getIndexVersionData = http_request(url + "/widgets/widgets/system_information.widget.php", {}, {}, {}, "GET")    # Pull our version data using GET HTTP
+        # Check that we had permissions for this page
+        if check_permissions(getIndexVersionData):
+            # Check that we are able to find version on the index page
+            expectedTag = "<th>Version</th>"
+            if expectedTag in getIndexVersionData["text"]:
+                versionTableData = getIndexVersionData["text"].split(expectedTag)[1].split("</tr>")[0]
+                # Check that we have strong tags
+                if "<strong>" in versionTableData:
+                    pfVersionFullRelease = versionTableData.split("<strong>")[1].split("</strong>")[0]    # Capture our version data between the strong tags
+                    pfVersionPatch = pfVersionFullRelease.replace("RELEASE","").replace("-","").replace("p","_")    # Format our version to shorthand
+                    pfVersion["version"]["installed_version"] = pfVersionPatch     # Save our formatted version
+            # Update exit code to success
+            pfVersion["ec"] = 0 if pfVersion["version"]["installed_version"] != "" else 2  # Set exit code 0 (success)
+        # If we did not have permission to the necessary pages
+        else:
+            pfVersion["ec"] = 15    # Set exit code 15 (permission denied)
+    # Return our data dictionary
+    return pfVersion
 
 # get_permissions_table() returns a dictionary file containing all user privileges, and their POST data values
 def get_permissions_table(server, user, key):
@@ -1248,6 +1301,75 @@ def set_system_hostname(server, user, key, host, domain):
         setSysHostEc = existingSysHost["ec"]
     # Return our exit code
     return setSysHostEc
+
+# get_ha_sync() pulls our current HA configuration from system_hasync.php
+def get_ha_sync(server, user, key):
+    # Local variables
+    haSync = {
+        "ec": 2, "ha_sync" : {}}    # Pre-define our data dictionary
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    # Submit our intitial request and check for errors
+    haSync["ec"] = 10 if check_dns_rebind_error(url) else haSync["ec"]    # Return exit code 10 if dns rebind error found
+    haSync["ec"] = 6 if not validate_platform(url) else haSync["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if haSync["ec"] == 2:
+        haSync["ec"] = 3 if not check_auth(server, user, key) else haSync["ec"]    # Return exit code 3 if we could not sign in
+    # Check if we encountered any errors before staring
+    if haSync["ec"] == 2:
+        # Check that we had permissions for this page
+        getHaSyncData = http_request(url + "/system_hasync.php", {}, {}, {}, "GET")    # Pull our admin data using GET HTTP
+        if check_permissions(getHaSyncData):
+            # Create a list of all CHECKBOX INPUTS to gather values from
+            checkBoxValues = [
+                "pfsyncenabled","synchronizeusers","synchronizeauthservers","synchronizecerts","synchronizerules","synchronizeschedules",
+                "synchronizealiases","synchronizenat","synchronizeipsec","synchronizeopenvpn","synchronizedhcpd",
+                "synchronizewol","synchronizestaticroutes","synchronizelb","synchronizevirtualip","synchronizetrafficshaper",
+                "synchronizetrafficshaperlimiter","synchronizednsforwarder","synchronizecaptiveportal"
+            ]
+            # Loop through our checkbox inputs and save their values
+            for cb in checkBoxValues:
+                # Check that we have our expected input tag
+                expectedTag = "<input name=\""+cb+"\""
+                if expectedTag in getHaSyncData["text"]:
+                    haSync["ha_sync"][cb] = "yes" if "checked=\"checked\"" in getHaSyncData["text"].split(expectedTag)[1].split("</label>")[0] else ""    # Save "yes" if check box is checked, otherwise empty string
+                # If we did not find this input tag in our HTML response
+                else:
+                    haSync["ha_sync"][cb] = ""    # Assume default
+            # Create a list of all TEXT INPUTS to gather values from
+            textValues = ["pfsyncpeerip","synchronizetoip","username"]
+            # Loop through our checkbox inputs and save their values
+            for txt in textValues:
+                # Check that we have our expected input tag
+                expectedTag = "id=\""+txt+"\" type=\"text\""
+                if expectedTag in getHaSyncData["text"]:
+                    haSync["ha_sync"][txt] = getHaSyncData["text"].split(expectedTag)[1].split(">")[0].split("value=\"")[1].split("\"")[0]   # Save our text input's value
+                # If we did not find this input tag in our HTML response
+                else:
+                    haSync["ha_sync"][txt] = ""    # Assume default
+            # Check our SELECT INPUTS to gather selected values
+            expectedTag = "<select class=\"form-control\" name=\"pfsyncinterface\" id=\"pfsyncinterface\">"
+            if expectedTag in getHaSyncData["text"]:
+                selectData = getHaSyncData["text"].split(expectedTag)[1].split("</select>")[0]    # Capture data between our select tags
+                selectOptions = selectData.split("<option")    # Split our select data into list of option tags
+                # Loop through our options and find our selected value
+                for opt in selectOptions:
+                    # Check if selected keyword is found
+                    if "selected>" in opt:
+                        haSync["ha_sync"]["pfsyncinterface"] = opt.split("value=\"")[1].split("\"")[0]    # Save our selected option value
+                        break    # Break our loop as we only expect one value
+                    # Otherwise assume default
+                    else:
+                        haSync["ha_sync"]["pfsyncinterface"] = ""    # Assign default
+            # If we did not found our expected select tag, assume default
+            else:
+                haSync["ha_sync"]["pfsyncinterface"] = ""    # Assign default
+            # Assign success exit code
+            haSync["ec"] = 0    # Assign exit code 0 (success)
+        # If we did not have permission to the necessary pages
+        else:
+            haSync["ec"] = 15    # ASsign exit code 15 (permission denied)
+    # Return our HA sync dictionary
+    return haSync
 
 # get_system_advanced_admin() pulls our current configuration from System > Advanced > Admin Access and saves it to a dictionary
 def get_system_advanced_admin(server, user, key):
@@ -3251,6 +3373,20 @@ def main():
                         print(get_exit_message("fail", pfsenseServer, pfsenseAction, '', ''))
                         sys.exit(1)
 
+            # Assign functions for flag --check-version
+            elif pfsenseAction == "--check-version":
+                # Action variables
+                user = fourthArg if thirdArg == "-u" and fourthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = sixthArg if fifthArg == "-p" and sixthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                pfVersion = get_pfsense_version(pfsenseServer, user, key)    # Pull our pfSense version
+                # Ensure we were able to pull our version successfully
+                if pfVersion["ec"] == 0:
+                    print(pfVersion["version"]["installed_version"])
+                # If we encountered an error pulling our version
+                else:
+                    print(get_exit_message(pfVersion["ec"],pfsenseServer,pfsenseAction,"",""))    # Print our error msg
+                    sys.exit(pfVersion["ec"])    # Exit on our non-zero function return code
+
             # Assign functions for flag --read-aliases
             elif pfsenseAction == "--read-aliases":
                 # Action Variables
@@ -3868,6 +4004,73 @@ def main():
                 else:
                     print(get_exit_message(arpTable["ec"], pfsenseServer, pfsenseAction, "", ""))
                     sys.exit(arpTable["ec"])
+
+            # Assign functions/processes for --read-hasync
+            elif pfsenseAction == "--read-hasync":
+                # Action variables
+                haFilter = thirdArg if len(sys.argv) > 3 else None   # Save our filter input
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                haSyncData = get_ha_sync(pfsenseServer, user, key)    # Pull our current HA Sync data dictionary
+                syncAreas = ["synchronizeusers","synchronizeauthservers","synchronizecerts",
+                    "synchronizerules", "synchronizeschedules","synchronizealiases","synchronizenat","synchronizeipsec","synchronizeopenvpn",
+                    "synchronizedhcpd","synchronizewol","synchronizestaticroutes","synchronizelb","synchronizevirtualip","synchronizetrafficshaper",
+                    "synchronizetrafficshaperlimiter", "synchronizednsforwarder", "synchronizecaptiveportal"]    # Define a list XMLRPC Sync areas
+                # Check that we did not encounter an error pulling our HA Sync data
+                if haSyncData["ec"] == 0:
+                    # FORMAT OUR PRINT DATA
+                    pfToggle = "enabled" if haSyncData["ha_sync"]["pfsyncenabled"] == "yes" else "disabled"    # Change "yes" to enabled
+                    pfsyncHead = structure_whitespace("-STATE SYNC SETTINGS (PFSYNC)",40,"-",True)    # Fromat our header
+                    pfsyncEnable = structure_whitespace("Enabled:",30," ",True) + pfToggle    # Format our enable value
+                    pfsyncIface = structure_whitespace("PFSYNC Interface:",30," ",True) + haSyncData["ha_sync"]["pfsyncinterface"]    # Format our interface
+                    pfsyncPip = structure_whitespace("PFSYNC Peer IP:",30," ",True) + haSyncData["ha_sync"]["pfsyncpeerip"]    # Format our peer IP
+                    pfsyncData = pfsyncHead + "\n" + pfsyncEnable + "\n" + pfsyncIface + "\n" + pfsyncPip    # Format our data points together
+                    xmlrpcHeader = structure_whitespace("-CONFIGURATION SYNC SETTINGS (XMLRPC)", 40, "-", True)    # Fromat our XMLRPC header
+                    xmlrpcIp = structure_whitespace("Sync to IP:",30," ",True) + haSyncData["ha_sync"]["synchronizetoip"]    # Format our XMLRPC sync IP
+                    xmlrpcUser = structure_whitespace("Remote System Username:",30," ",True) + haSyncData["ha_sync"]["username"]    # Format our XMLRPC remote username
+                    xmlrpcOptStr = ""
+                    # For each SYNC option enabled, print
+                    for so in syncAreas:
+                        # Check if option is enabled
+                        if haSyncData["ha_sync"][so] == "yes":
+                            xmlrpcOptStr = xmlrpcOptStr + "\n  - " + so.replace("synchronize","")
+                    xmlrpcSyncOpt = structure_whitespace("Synced options:",30," ",True) + xmlrpcOptStr   # Format our SYNC options
+                    xmlrpcData = xmlrpcHeader + "\n" + xmlrpcIp + "\n" + xmlrpcUser + "\n" + xmlrpcSyncOpt    # Format our XMLRPC data set
+                    # Check if we need to print our PFSYNC data
+                    if haFilter.lower() in ["--all","-a"]:
+                        print(pfsyncData)    # Print our PFSYNC data
+                        print(xmlrpcData)    # Print our XMLRPC data
+                    elif haFilter.lower() in ["--pfsync","-p"]:
+                        print(pfsyncData)    # Print our PFSYNC data
+                    # Check if we need to print our XMLRPC data
+                    elif haFilter.lower() in ["--xmlrpc","-x"]:
+                        print(xmlrpcData)    # Print our XMLRPC data
+                    # If we want to export values as JSON
+                    elif haFilter.startswith(("--json=", "-j=")):
+                        jsonPath = haFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                        jsonName = "pf-readhasync-" + currentDate + ".json"    # Assign our default JSON name
+                        # Check if JSON path exists
+                        if os.path.exists(jsonPath):
+                            # Open an export file and save our data
+                            jsonExported = export_json(haSyncData["ha_sync"], jsonPath, jsonName)
+                            # Check if the file now exists
+                            if jsonExported:
+                                print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                            else:
+                                print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # Print error if path does not exist
+                        else:
+                            print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                            sys.exit(1)
+                    # If our filter did not match any expected filters, return error
+                    else:
+                        print(get_exit_message("invalid_filter",pfsenseServer,pfsenseAction,haFilter,""))
+                        sys.exit(1)
+                # If we encountered an error pulling our HA Sync data
+                else:
+                    print(get_exit_message(haSyncData["ec"]),pfsenseServer,pfsenseAction,"","")    # Print our error message
+                    sys.exit(haSyncData["ec"])     # Exit on our non-zero function return code
             # Assign functions/processes for --read-xml
             elif pfsenseAction == "--read-xml":
                 # Action variables
