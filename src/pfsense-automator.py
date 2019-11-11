@@ -1339,13 +1339,13 @@ def get_ha_sync(server, user, key):
             textValues = ["pfsyncpeerip","synchronizetoip","username"]
             # Loop through our checkbox inputs and save their values
             for txt in textValues:
+                haSync["ha_sync"][txt] = ""    # Assume default
                 # Check that we have our expected input tag
                 expectedTag = "id=\""+txt+"\" type=\"text\""
                 if expectedTag in getHaSyncData["text"]:
-                    haSync["ha_sync"][txt] = getHaSyncData["text"].split(expectedTag)[1].split(">")[0].split("value=\"")[1].split("\"")[0]   # Save our text input's value
-                # If we did not find this input tag in our HTML response
-                else:
-                    haSync["ha_sync"][txt] = ""    # Assume default
+                    # Check that we have a value
+                    if "value=\"" in getHaSyncData["text"].split(expectedTag)[1].split(">")[0]:
+                        haSync["ha_sync"][txt] = getHaSyncData["text"].split(expectedTag)[1].split(">")[0].split("value=\"")[1].split("\"")[0]   # Save our text input's value
             # Check our SELECT INPUTS to gather selected values
             expectedTag = "<select class=\"form-control\" name=\"pfsyncinterface\" id=\"pfsyncinterface\">"
             if expectedTag in getHaSyncData["text"]:
@@ -4020,12 +4020,12 @@ def main():
                 if haSyncData["ec"] == 0:
                     # FORMAT OUR PRINT DATA
                     pfToggle = "enabled" if haSyncData["ha_sync"]["pfsyncenabled"] == "yes" else "disabled"    # Change "yes" to enabled
-                    pfsyncHead = structure_whitespace("-STATE SYNC SETTINGS (PFSYNC)",40,"-",True)    # Fromat our header
+                    pfsyncHead = structure_whitespace("--STATE SYNC SETTINGS (PFSYNC)",40,"-",True)    # Fromat our header
                     pfsyncEnable = structure_whitespace("Enabled:",30," ",True) + pfToggle    # Format our enable value
                     pfsyncIface = structure_whitespace("PFSYNC Interface:",30," ",True) + haSyncData["ha_sync"]["pfsyncinterface"]    # Format our interface
                     pfsyncPip = structure_whitespace("PFSYNC Peer IP:",30," ",True) + haSyncData["ha_sync"]["pfsyncpeerip"]    # Format our peer IP
                     pfsyncData = pfsyncHead + "\n" + pfsyncEnable + "\n" + pfsyncIface + "\n" + pfsyncPip    # Format our data points together
-                    xmlrpcHeader = structure_whitespace("-CONFIGURATION SYNC SETTINGS (XMLRPC)", 40, "-", True)    # Fromat our XMLRPC header
+                    xmlrpcHeader = structure_whitespace("--CONFIGURATION SYNC SETTINGS (XMLRPC)", 40, "-", True)    # Fromat our XMLRPC header
                     xmlrpcIp = structure_whitespace("Sync to IP:",30," ",True) + haSyncData["ha_sync"]["synchronizetoip"]    # Format our XMLRPC sync IP
                     xmlrpcUser = structure_whitespace("Remote System Username:",30," ",True) + haSyncData["ha_sync"]["username"]    # Format our XMLRPC remote username
                     xmlrpcOptStr = ""
