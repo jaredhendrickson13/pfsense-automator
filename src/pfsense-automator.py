@@ -404,6 +404,17 @@ def get_exit_message(ec, server, command, data1, data2):
             "export_success" : "Successfully exported CARP data to " + data1,
             "export_fail" : "Failed to export CARP data as JSON"
         },
+        # Error/success messages for --set-carp-maintenance
+        "--set-carp-maintenance" : {
+            0 : "Successfully " + data1 + " CARP maintenance mode on `" + server + "`",
+            2 : "Error: Unexpected error " + data1 + " CARP maintenance mode",
+            3 : globalAuthErrMsg,
+            4 : "Error: No configured CARP interfaces were found",
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_toggle" : "Error: Invalid toggle `" + data1 + "`. Expected `enable` or `disable`"
+        },
         # Error/success messages for --read-virtual-ip
         "--read-virtual-ips" : {
             2 : "Error: Unknown error gathering virtual IP data",
@@ -481,45 +492,64 @@ def get_terminal_width():
          struct.pack('HHHH', 0, 0, 0, 0)))
      return tw
 # http_request() uses the requests module to make HTTP POST/GET requests
-def http_request(url, data, headers, files, method):
+def http_request(url, data, headers, files, timeout, method):
     # Local Variables
     resp_dict = {}    # Initialize response dictionary to return our response values
     data = {} if type(data) != dict else data
     headers = {} if type(headers) != dict else headers
     files = {} if type(files) != dict else files
+    noRespMode = True if timeout <= 5 else False    # Determine if user expects a response based on timeout value
     method_list = ['GET', 'POST']    # Set a list of supported HTTP methods
     # Check that our method is valid
     if method.upper() in method_list:
         # Process to run if a GET request was requested
         if method.upper() == "GET":
+            getTimedOut = False    # Assign bool to track whether we received a timeout
+            getConnErr = False    # Assign a bool to track whether we received a connection error
             try:
-                req = req_session.get(url, headers=headers, verify=False, timeout=45)
+                req = req_session.get(url, headers=headers, verify=False, timeout=timeout)
             except requests.exceptions.ReadTimeout:
+                getTimedOut = True
+            except requests.exceptions.ConnectionError:
+                getConnErr = True
+            # If our connection timed out AND our timeout value was greater than 5 seconds
+            if getTimedOut and timeout > 5:
                 print(get_exit_message("timeout", "", "generic", "", ""))
                 sys.exit(1)
-            except requests.exceptions.ConnectionError:
+            # If our connection returned an error
+            if getConnErr:
                 print(get_exit_message("connection", "", "generic", "", ""))
                 sys.exit(1)
         # Process to run if a POST request was requested
         elif method.upper() == "POST":
+            postTimedOut = False  # Assign bool to track whether we received a timeout
+            postConnErr = False  # Assign a bool to track whether we received a connection error
             # Try to open the connection and gather data
             try:
-                req = req_session.post(url, data=data, files=files, headers=headers, verify=False, timeout=45)
-            except requests.exceptions.ConnectionError:
-                print(get_exit_message("connection", "", "generic", "", ""))
-                sys.exit(1)
+                req = req_session.post(url, data=data, files=files, headers=headers, verify=False, timeout=timeout)
             except requests.exceptions.ReadTimeout:
+                postTimedOut = True
+            except requests.exceptions.ConnectionError:
+                postConnErr = True
+            # If our connection timed out AND our timeout value was greater than 5 seconds
+            if postTimedOut and timeout > 5:
                 print(get_exit_message("timeout", "", "generic", "", ""))
                 sys.exit(1)
-        # Populate our response dictionary with our response values
-        resp_dict["text"] = req.text  # Save our HTML text data
-        resp_dict["resp_code"] = req.status_code  # Save our response code
-        resp_dict["req_url"] = url    # Save our requested URL
-        resp_dict["resp_url"] = req.url    # Save the URL returned in our response
-        resp_dict["resp_headers"] = req.headers  # Save our response headers
-        resp_dict["method"] = method.upper()    # Save our HTTP method
-        resp_dict['encoding'] = req.encoding    # Save our encode type
-        resp_dict['cookies'] = req.cookies    # Save our encode type
+            # If our connection returned an error
+            if postConnErr:
+                print(get_exit_message("connection", "", "generic", "", ""))
+                sys.exit(1)
+        # Check if responseless mode is disabled
+        if not noRespMode:
+            # Populate our response dictionary with our response values
+            resp_dict["text"] = req.text  # Save our HTML text data
+            resp_dict["resp_code"] = req.status_code  # Save our response code
+            resp_dict["req_url"] = url    # Save our requested URL
+            resp_dict["resp_url"] = req.url    # Save the URL returned in our response
+            resp_dict["resp_headers"] = req.headers  # Save our response headers
+            resp_dict["method"] = method.upper()    # Save our HTTP method
+            resp_dict['encoding'] = req.encoding    # Save our encode type
+            resp_dict['cookies'] = req.cookies    # Save our encode type
         # Return our response dict
         return resp_dict
     # Return method error if method is invalid
@@ -577,7 +607,7 @@ def structure_whitespace(string, length, char, strict_length):
 # validate_platform()
 def validate_platform(url):
     # Local variables
-    htmlStr = http_request(url, {}, {}, {}, "GET")["text"]    # Get our HTML data
+    htmlStr = http_request(url, {}, {}, {}, 45, "GET")["text"]    # Get our HTML data
     platformConfidence = 0    # Assign a integer confidence value
     # List of platform dependent key words to check for
     checkItems = [
@@ -670,7 +700,7 @@ def check_permissions(httpResp):
 # check_dns_rebind_error() checks if access to the webconfigurator is denied due to a DNS rebind error
 def check_dns_rebind_error(url):
     # Local Variables
-    httpResponse = http_request(url, {}, {}, {}, "GET")["text"]    # Get the HTTP response of the URL
+    httpResponse = http_request(url, {}, {}, {}, 45, "GET")["text"]    # Get the HTTP response of the URL
     rebindError = "Potential DNS Rebind attack detected"    # Assigns the error string to look for when DNS rebind error occurs
     rebindFound = False    # Assigns a boolean to track whether a rebind error was found. This is our return value
     # Check the HTTP response code for error message
@@ -685,11 +715,11 @@ def check_auth(server, user, key):
     authSuccess = False    # Set the default return value to false
     url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)   # Assign our base URL
     authCheckData = {"__csrf_magic": get_csrf_token(url + "/index.php", "GET"), "usernamefld": user, "passwordfld": key, "login": "Sign In"}    # Define a dictionary for our login POST data
-    preAuthCheck = http_request(url + "/index.php", {}, {}, {}, "GET")
+    preAuthCheck = http_request(url + "/index.php", {}, {}, {}, 45, "GET")
     # Check that we're not already signed
     if not "class=\"fa fa-sign-out\"" in preAuthCheck["text"]:
         # Complete authentication
-        authCheck = http_request(url + "/index.php", authCheckData, {}, {}, "POST")
+        authCheck = http_request(url + "/index.php", authCheckData, {}, {}, 45, "POST")
         authSuccess = True if not "Username or Password incorrect" in authCheck["text"] and "class=\"fa fa-sign-out\"" in authCheck["text"] else authSuccess    # Return false if login failed
     # Else return true because we are already signed in
     else:
@@ -700,7 +730,7 @@ def check_auth(server, user, key):
 def get_csrf_token(url, type):
         # Local Variables
         csrfTokenLength = 55  # Set the expected token length of the csrf token
-        csrfResponse = http_request(url, None, {}, {}, type)
+        csrfResponse = http_request(url, None, {}, {}, 45, type)
         # Parse CSRF token and conditionalize return value
         if "sid:" in csrfResponse['text']:
             csrfParsed = "sid:" + csrfResponse['text'].split("sid:")[1].split(";")[0].replace(" ", "").replace("\n", "").replace("\"", "")
@@ -723,7 +753,7 @@ def get_pfsense_version(server, user, key):
         pfVersion["ec"] = 3 if not check_auth(server, user, key) else pfVersion["ec"]    # Return exit code 3 if we could not sign in
     # Check if we encountered any errors before staring
     if pfVersion["ec"] == 2:
-        getIndexVersionData = http_request(url + "/widgets/widgets/system_information.widget.php", {}, {}, {}, "GET")    # Pull our version data using GET HTTP
+        getIndexVersionData = http_request(url + "/widgets/widgets/system_information.widget.php", {}, {}, {}, 45, "GET")    # Pull our version data using GET HTTP
         # Check that we had permissions for this page
         if check_permissions(getIndexVersionData):
             # Check that we are able to find version on the index page
@@ -759,7 +789,7 @@ def get_permissions_table(server, user, key):
         getAllGroupId = get_user_groups(server, user, key)    # Find the 'all' group ID, this group displays all available privileges
         # Check that we could find group containing all available permissions
         if getAllGroupId["ec"] == 0:
-            getPrmsData = http_request(url + "/system_groupmanager_addprivs.php?groupid=" + getAllGroupId["groups"]["all"]["id"], {}, {}, {}, "GET")    # Pull our users data using GET HTTP
+            getPrmsData = http_request(url + "/system_groupmanager_addprivs.php?groupid=" + getAllGroupId["groups"]["all"]["id"], {}, {}, {}, 45, "GET")    # Pull our users data using GET HTTP
             # Check that we had permissions for this page
             if check_permissions(getPrmsData):
                 # Parse our HTML output to only return the privilege select tag
@@ -808,7 +838,7 @@ def get_users(server, user, key):
     # Check if we encountered any errors before staring
     if users["ec"] == 2:
         # Check that we had permissions for this page
-        getUserData = http_request(url + "/system_usermanager.php", {}, {}, {}, "GET")    # Pull our users data using GET HTTP
+        getUserData = http_request(url + "/system_usermanager.php", {}, {}, {}, 45, "GET")    # Pull our users data using GET HTTP
         if check_permissions(getUserData):
             # Save our user permissions dictionary
             masterPrivDict = get_permissions_table(server, user, key)    # Pull the dictionary containing all privileges and their POST data names
@@ -830,7 +860,7 @@ def get_users(server, user, key):
                             if uid.isdigit():
                                 # Try to parse our values, if an error is thrown break the loop and return failed exit code
                                 try:
-                                    getUserAdvData = http_request(url + "/system_usermanager.php?act=edit&userid=" + uid, {}, {}, {}, "GET")    # Save our advanced user data
+                                    getUserAdvData = http_request(url + "/system_usermanager.php?act=edit&userid=" + uid, {}, {}, {}, 45, "GET")    # Save our advanced user data
                                     privLevel = "user"    # Default each user to privilege level 'user' until determined otherwise
                                     definedBy = getUserAdvData["text"].split("<span>Defined by</span>")[1].split("</div>")[0].replace("\t","").replace("\n","").split("<div class=\"col-sm-10\">")[1] if "<span>Defined by</span>" in getUserAdvData["text"] else ""    # Save our defined by field
                                     disabled = "yes" if "checked=\"checked\"" in getUserAdvData["text"].split("<span>Disabled</span>")[1].split("</div>")[0] else ""    # Save our disable login value
@@ -959,7 +989,7 @@ def get_user_groups(server, user, key):
     # Check if we encountered any errors before staring
     if groups["ec"] == 2:
         # Check that we had permissions for this page
-        getGroupData = http_request(url + "/system_groupmanager.php", {}, {}, {}, "GET")    # Pull our groups data using GET HTTP
+        getGroupData = http_request(url + "/system_groupmanager.php", {}, {}, {}, 45, "GET")    # Pull our groups data using GET HTTP
         if check_permissions(getGroupData):
             # Check that we have table information
             if "<tbody>" in getGroupData["text"]:
@@ -1004,7 +1034,7 @@ def get_general_setup(server, user, key):
     # Check if we encountered any errors before staring
     if general["ec"] == 2:
         # Check that we had permissions for this page
-        getGeneralData = http_request(url + "/system.php", {}, {}, {}, "GET")    # Pull our admin data using GET HTTP
+        getGeneralData = http_request(url + "/system.php", {}, {}, {}, 45, "GET")    # Pull our admin data using GET HTTP
         if check_permissions(getGeneralData):
             # Check that we have a SYSTEM table
             if "<h2 class=\"panel-title\">System</h2>" in getGeneralData["text"]:
@@ -1277,7 +1307,7 @@ def set_system_hostname(server, user, key, host, domain):
             # Loop pulling our updated config, if DNS rebind is detected try switching the pfSense server to the new hostname
             updateCount = 0    # Assign a loop counter
             while True:
-                postSysHost = http_request(url + "/system.php", sysHostPostData, {}, {}, "POST")    # Run our POST request
+                postSysHost = http_request(url + "/system.php", sysHostPostData, {}, {}, 45, "POST")    # Run our POST request
                 newSysHost = get_general_setup(server, user, key)    # Pull our updated configuration to check against our post data
                 if newSysHost["ec"] == 10:
                     server = sysHostPostData["hostname"] + "." + sysHostPostData["domain"]    # Try to use our new hostname if we experience a DNS rebind
@@ -1317,7 +1347,7 @@ def get_ha_sync(server, user, key):
     # Check if we encountered any errors before staring
     if haSync["ec"] == 2:
         # Check that we had permissions for this page
-        getHaSyncData = http_request(url + "/system_hasync.php", {}, {}, {}, "GET")    # Pull our admin data using GET HTTP
+        getHaSyncData = http_request(url + "/system_hasync.php", {}, {}, {}, 45, "GET")    # Pull our admin data using GET HTTP
         if check_permissions(getHaSyncData):
             # Create a list of all CHECKBOX INPUTS to gather values from
             checkBoxValues = [
@@ -1391,7 +1421,7 @@ def get_system_advanced_admin(server, user, key):
     # Check if we encountered any errors before staring
     if advAdm["ec"] == 2:
         # Check that we had permissions for this page
-        getAdvAdmData = http_request(url + "/system_advanced_admin.php", {}, {}, {}, "GET")    # Pull our admin data using GET HTTP
+        getAdvAdmData = http_request(url + "/system_advanced_admin.php", {}, {}, {}, 45, "GET")    # Pull our admin data using GET HTTP
         if check_permissions(getAdvAdmData):
             # Check that we have a webconfigurator table
             if "<h2 class=\"panel-title\">webConfigurator</h2>" in getAdvAdmData["text"]:
@@ -1622,7 +1652,7 @@ def setup_wc(server, user, key, maxProc, redirect, hsts, autoComplete, loginMsg,
         # Check that we did not encounter an error
         if wcConfigured == 2:
             # Use POST HTTP to save our new values
-            postWcConfig = http_request(url + "/system_advanced_admin.php", wcPostData, {'Cache-Control': 'no-cache'}, {}, "POST")    # POST our data
+            postWcConfig = http_request(url + "/system_advanced_admin.php", wcPostData, {'Cache-Control': 'no-cache'}, {}, 45, "POST")    # POST our data
             # Give pfSense time to restart webconfigurator and read our updated configuration to ensure changes were applied
             time.sleep(2)
             updateAdvAdmData = get_system_advanced_admin(server, user, key)    # Update our raw configuration dictionary
@@ -1668,7 +1698,7 @@ def set_wc_port(server, user, key, protocol, port):
             wcPostData["webguiport"] = port
             wcProtocolPort = port    # Update our global wcProtocolPort used by the script
         # POST our request
-        wcPortPost = http_request(url + "/system_advanced_admin.php", wcPostData, {}, {}, "POST")
+        wcPortPost = http_request(url + "/system_advanced_admin.php", wcPostData, {}, {}, 45, "POST")
         time.sleep(2)    # Give our webConfigurator a couple seconds to restart
         # Loop for up to 10 second and check that our port opens
         counter = 0    # Define a loop counter
@@ -1731,7 +1761,7 @@ def setup_ssh(server, user, key, enable, port, auth, forwarding):
         # Check that we did not encounter an error
         if sshConfigured == 2:
             # Use POST HTTP to save our new values
-            postSshConfig = http_request(url + "/system_advanced_admin.php", sshPostData, {}, {}, "POST")    # POST our data
+            postSshConfig = http_request(url + "/system_advanced_admin.php", sshPostData, {}, {}, 45, "POST")    # POST our data
             # Check that our values were updated, assign exit codes accordingly
             newExistingAdvAdm = get_system_advanced_admin_post_data(get_system_advanced_admin(server, user, key)["adv_admin"])    # Get our dictionary of configured advanced options
             # Loop through our POST variables and ensure they match
@@ -1762,7 +1792,7 @@ def setup_console(server, user, key, consolePass):
         consolePostData["disableconsolemenu"] = "yes" if consolePass.upper() in ["ENABLE", "YES"] else ""    # If user wants to password protect console, assign value of yes
         if consoleConfigured == 2:
             # Use POST HTTP to save our new values
-            postConsoleConfig = http_request(url + "/system_advanced_admin.php", consolePostData, {}, {}, "POST")    # POST our data
+            postConsoleConfig = http_request(url + "/system_advanced_admin.php", consolePostData, {}, {}, 45, "POST")    # POST our data
             # Check that our values were updated, assign exit codes accordingly
             updateAdvAdmData = get_system_advanced_admin(server, user, key)    # Update our raw configuration dictionary
             newExistingAdvAdm = get_system_advanced_admin_post_data(updateAdvAdmData["adv_admin"])    # Get our dictionary of configured advanced options
@@ -1794,7 +1824,7 @@ def get_arp_table(server, user, key):
     # Check if we encountered any errors before staring
     if arpTable["ec"] == 2:
         # Check that we had permissions for this page
-        getArpData = http_request(url + "/diag_arp.php", {}, {}, {}, "GET")    # Pull our Interface data using GET HTTP
+        getArpData = http_request(url + "/diag_arp.php", {}, {}, {}, 45, "GET")    # Pull our Interface data using GET HTTP
         if check_permissions(getArpData):
             arpTableBody = getArpData["text"].split("<tbody>")[1].split("</tbody>")[0]  # Find the data table body
             arpTableRows = arpTableBody.replace("\t", "").replace("\n", "").replace("</tr>", "").split("<tr>")  # Find each of our table rows
@@ -1838,7 +1868,7 @@ def get_xml_backup(server, user, key, area, noPkg, noRrd, encrypt, encryptPass):
     # Check if we encountered any errors before staring
     if xmlTable["ec"] == 2:
         # Check that we had permissions for this page
-        getXmlData = http_request(url + "/diag_backup.php", {}, {}, {}, "GET")    # Pull our XML download page using GET HTTP
+        getXmlData = http_request(url + "/diag_backup.php", {}, {}, {}, 45, "GET")    # Pull our XML download page using GET HTTP
         if check_permissions(getXmlData):
             # Populate our POST data dictionary
             getXmlPostData = {
@@ -1853,7 +1883,7 @@ def get_xml_backup(server, user, key, area, noPkg, noRrd, encrypt, encryptPass):
                 "decrypt_password" : ""
             }
             # Make our POST request
-            postXmlReq = http_request(url + "/diag_backup.php", getXmlPostData, {}, {}, "POST")
+            postXmlReq = http_request(url + "/diag_backup.php", getXmlPostData, {}, {}, 45, "POST")
             xmlTable["xml"] = postXmlReq["text"]    # Save our XML backup to our return dict
             # Check our POST requests response code
             if postXmlReq["resp_code"] == 200:
@@ -1879,12 +1909,12 @@ def upload_xml_backup(server, user, key, area, confFile, decryptPass):
     # Check if we encountered any errors before staring
     if xmlAdded == 2:
         # Check that we had permissions for this page
-        getXmlData = http_request(url + "/diag_backup.php", {}, {}, {}, "GET")    # Pull our XML download page using GET HTTP
+        getXmlData = http_request(url + "/diag_backup.php", {}, {}, {}, 45, "GET")    # Pull our XML download page using GET HTTP
         if check_permissions(getXmlData):
             # Assign our POST data dictionary
             restoreXmlPostData = {"__csrf_magic": get_csrf_token(url + "/diag_backup.php", "GET"), "restorearea": area, "decrypt": decryptEnable, "decrypt_password": decryptPass, "restore": "Restore Configuration"}
             # Make our HTTP POST
-            restoreXmlPost = http_request(url + "/diag_backup.php", restoreXmlPostData, {}, confFile, "POST")
+            restoreXmlPost = http_request(url + "/diag_backup.php", restoreXmlPostData, {}, confFile, 45, "POST")
             # Check if our backup was successfully restored
             successStr = "The configuration area has been restored. The firewall may need to be rebooted."
             if successStr in restoreXmlPost["text"]:
@@ -1935,7 +1965,7 @@ def get_system_tunables(server, user, key):
     # Check if we encountered any errors before staring
     if tunables["ec"] == 2:
         # Check that we had permissions for this page
-        getTunableData = http_request(url + "/system_advanced_sysctl.php", {}, {}, {}, "GET")    # Pull our Interface data using GET HTTP
+        getTunableData = http_request(url + "/system_advanced_sysctl.php", {}, {}, {}, 45, "GET")    # Pull our Interface data using GET HTTP
         if check_permissions(getTunableData):
             tunableBody = getTunableData["text"].split("<table class")[1].split("</table>")[0]  # Find the data table body
             tunableRows = tunableBody.replace("\t", "").replace("\n", "").replace("</tr>", "").split("<tr>")  # Find each of our table rows
@@ -1973,13 +2003,13 @@ def add_system_tunable(server, user, key, name, descr, value):
         # Check that we did not encounter an error
         if tunableAdded == 2:
             # Use GET HTTP to see what interfaces are available
-            getExistingIfaces = http_request(url + "/system_advanced_sysctl.php?act=edit", {}, {}, {}, "GET")    # Get our HTTP response
+            getExistingIfaces = http_request(url + "/system_advanced_sysctl.php?act=edit", {}, {}, {}, 45, "GET")    # Get our HTTP response
             # Check that we had permissions for this page
             if check_permissions(getExistingIfaces):
                 tunablePostData["__csrf_magic"] = get_csrf_token(url + "/system_advanced_sysctl.php?act=edit", "GET")    # Update our CSRF token
-                postTunable = http_request(url + "/system_advanced_sysctl.php?act=edit", tunablePostData, {}, {}, "POST")    # POST our data
+                postTunable = http_request(url + "/system_advanced_sysctl.php?act=edit", tunablePostData, {}, {}, 45, "POST")    # POST our data
                 applyTunableData = {"__csrf_magic" : get_csrf_token(url + "/system_advanced_sysctl.php", "GET"), "apply" : "Apply Changes"}    # Assign our post data to apply changes
-                applyTunable = http_request(url + "/system_advanced_sysctl.php", applyTunableData, {}, {}, "POST")    # POST our data
+                applyTunable = http_request(url + "/system_advanced_sysctl.php", applyTunableData, {}, {}, 45, "POST")    # POST our data
                 updatedTunables = get_system_tunables(server, user, key)    # Get our updated dictionary of configured tunables
                 tunableAdded = 0 if name in updatedTunables["tunables"] else tunableAdded    # Check that our new value is listed
             # If we didn't have permissions to add the tunable
@@ -2004,7 +2034,7 @@ def get_interfaces(server, user, key):
         ifaces["ec"] = 3 if not check_auth(server, user, key) else ifaces["ec"]    # Return exit code 3 if we could not sign in
     # Check if we did not encountered any errors thus far, continue if not
     if ifaces["ec"] == 2:
-        getIfData = http_request(url + "/interfaces_assign.php", {}, {}, {}, "GET")    # Pull our interface data using GET HTTP
+        getIfData = http_request(url + "/interfaces_assign.php", {}, {}, {}, 45, "GET")    # Pull our interface data using GET HTTP
         # Check that we have a table body to pull from
         if "<tbody>" in getIfData["text"]:
             # Target only HTML data between our tbody tags
@@ -2072,7 +2102,7 @@ def get_interfaces(server, user, key):
                         "type","type6","mediaopt","subnet","gateway","alias-subnet","subnetv6","gatewayv6","dhcp6-ia-pd-len",
                         "adv_dhcp6_prefix_selected_interface"
                     ]
-                    getIfConfig = http_request(url + "/interfaces.php?if=" + pfId, {}, {}, {}, "GET")["text"]    # Get our HTML response
+                    getIfConfig = http_request(url + "/interfaces.php?if=" + pfId, {}, {}, {}, 45, "GET")["text"]    # Get our HTML response
                     # LOOP AND SAVE OUR TOGGLE/CHKBOX INPUTS
                     for chk in toggleInputs:
                         # Check if our interface is enabled
@@ -2124,7 +2154,7 @@ def get_vlan_ids(server, user, key):
         vlans["ec"] = 3 if not check_auth(server, user, key) else vlans["ec"]    # Return exit code 3 if we could not sign in
     # Check if we did not encountered any errors thus far, continue if not
     if vlans["ec"] == 2:
-        getVlanData = http_request(url + "/interfaces_vlan.php", {}, {}, {}, "GET")    # Pull our VLAN data using GET HTTP
+        getVlanData = http_request(url + "/interfaces_vlan.php", {}, {}, {}, 45, "GET")    # Pull our VLAN data using GET HTTP
         # Check that we had permissions for this page
         if check_permissions(getVlanData):
             vlanTableBody = getVlanData["text"].split("<tbody>")[1].split("</tbody>")[0]    # Find the data table body
@@ -2167,7 +2197,7 @@ def add_vlan_id(server, user, key, iface, vlanId, priority, descr):
         # Check that we did not encounter an error
         if vlanAdded == 2:
             # Use GET HTTP to see what interfaces are available
-            getExistingIfaces = http_request(url + "/interfaces_vlan_edit.php", {}, {}, {}, "GET")    # Get our HTTP response
+            getExistingIfaces = http_request(url + "/interfaces_vlan_edit.php", {}, {}, {}, 45, "GET")    # Get our HTTP response
             # Check that we had permissions for this page
             if check_permissions(getExistingIfaces):
                 ifaceSel = getExistingIfaces["text"].split("<select class=\"form-control\" name=\"if\" id=\"if\">")[1].split("</select>")[0]    # Pull iface select tag
@@ -2185,7 +2215,7 @@ def add_vlan_id(server, user, key, iface, vlanId, priority, descr):
                         if iface in ifaceValues:
                             # Update our csrf token and submit our POST request
                             vlanPostData["__csrf_magic"] = get_csrf_token(url + "/interfaces_vlan_edit.php", "GET")
-                            vlanPostReq = http_request(url + "/interfaces_vlan_edit.php", vlanPostData, {}, {}, "POST")
+                            vlanPostReq = http_request(url + "/interfaces_vlan_edit.php", vlanPostData, {}, {}, 45, "POST")
                             # Check that our new value is now configured
                             vlanCheck = get_vlan_ids(server, user, key)
                             # Loop through existing VLAN and check for our value
@@ -2257,8 +2287,8 @@ def add_auth_server_ldap(server, user, key, descrName, ldapServer, ldapPort, tra
         addAuthPermissions = http_request(url + "/system_authservers.php?act=new", {}, {}, {}, "GET")
         if check_permissions(addAuthPermissions):
             # Update our CSRF token and submit our POST request
-            addAuthServerData["__csrf_magic"] = get_csrf_token(url + "/system_authservers.php?act=new", "GET")
-            addAuthServer = http_request(url + "/system_authservers.php?act=new", addAuthServerData, {}, {}, "POST")
+            addAuthServerData["__csrf_magic"] = get_csrf_token(url + "/system_authservers.php?act=new", 45, "GET")
+            addAuthServer = http_request(url + "/system_authservers.php?act=new", addAuthServerData, {}, {}, 45, "POST")
             ldapAdded = 0
         # If we did not have permissions to the page
         else:
@@ -2279,7 +2309,7 @@ def get_dns_entries(server, user, key):
     # Check that login was successful
     if dnsDict["ec"] == 2:
         # Check that we have access to these pages before proceeding
-        getDnsResp = http_request(url + "/services_unbound.php", {}, {}, {}, "GET")
+        getDnsResp = http_request(url + "/services_unbound.php", {}, {}, {}, 45, "GET")
         if check_permissions(getDnsResp):  # Check that we had permissions for this page
             # Pull our DNS entries
             dnsBody = getDnsResp["text"].split("<tbody>")[1].split("</tbody>")[0]
@@ -2341,15 +2371,15 @@ def add_dns_entry(server, user, key, host, domain, ip, descr):
         # Check that no errors have occurred so far (should be at 2)
         if recordAdded == 2:
             # Check we have permissions to the pages
-            dnsReadPermissions = http_request(url + "/services_unbound.php", {}, {}, {}, "GET")
-            dnsAddPermissions = http_request(url + "/services_unbound_host_edit.php", {}, {}, {}, "GET")
+            dnsReadPermissions = http_request(url + "/services_unbound.php", {}, {}, {}, 45, "GET")
+            dnsAddPermissions = http_request(url + "/services_unbound_host_edit.php", {}, {}, {}, 45, "GET")
             if check_permissions(dnsAddPermissions) and check_permissions(dnsReadPermissions):
                 # Update our CSRF token and add our DNS entry
                 dnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound_host_edit.php", "GET")
-                dnsCheck = http_request(url + "/services_unbound_host_edit.php", dnsData, {}, {}, "POST")
+                dnsCheck = http_request(url + "/services_unbound_host_edit.php", dnsData, {}, {}, 45, "POST")
                 # Update our CSRF token and save changes
                 saveDnsData["__csrf_magic"] = get_csrf_token(url + "/services_unbound.php", "GET")
-                saveCheck = http_request(url + "/services_unbound.php", saveDnsData, {}, {}, "POST")
+                saveCheck = http_request(url + "/services_unbound.php", saveDnsData, {}, {}, 45, "POST")
                 # Check if a record is now present
                 if check_dns(server, user, key, host, domain):
                     recordAdded = 0    # Set return variable 0 (0 means successfully added)
@@ -2376,7 +2406,7 @@ def get_ssl_certs(server, user, key):
         certManagerDict["ec"] = 3 if not check_auth(server, user, key) else certManagerDict["ec"]    # Return exit code 3 if we could not sign in
     if certManagerDict["ec"] == 2:
         # Check that we had permissions for this page
-        getCertData = http_request(url + "/system_certmanager.php", {}, {}, {}, "GET")
+        getCertData = http_request(url + "/system_certmanager.php", {}, {}, {}, 45, "GET")
         if check_permissions(getCertData):
             # Parse our output
             certRowList = getCertData['text'].split("<tbody>")[1].split("</tbody>")[0].split("<tr>")
@@ -2481,11 +2511,11 @@ def add_ssl_cert(server, user, key, cert, certkey, descr):
     # Only proceed if an error has not occurred
     if certAdded == 2:
         # Check our permissions
-        permissionCheck = http_request(url + "/system_certmanager.php?act=new", {}, {}, {}, "GET")
+        permissionCheck = http_request(url + "/system_certmanager.php?act=new", {}, {}, {}, 45, "GET")
         if check_permissions(permissionCheck):
             # Add SSL cert and check for the added cert afterwards
             addCertData["__csrf_magic"] = get_csrf_token(url + "/system_certmanager.php?act=new", "GET")
-            postCheck = http_request(url + "/system_certmanager.php?act=new", addCertData, {}, {}, "POST")
+            postCheck = http_request(url + "/system_certmanager.php?act=new", addCertData, {}, {}, 45, "POST")
             postCertDict = get_ssl_certs(server, user, key)  # Get the current dict of certificate installed on pfSense
             postCertDictLen = len(postCertDict["certs"])  # Track the length of existing certificates in the dict
             # Check if the dict increased in size by one when we added a new certificate
@@ -2518,7 +2548,7 @@ def set_wc_certificate(server, user, key, certName):
     # Check that authentication was successful
     if wccCheck == 2:
         # Check that we have permissions to this page first
-        getSysAdvAdm = http_request(url + "/system_advanced_admin.php", {}, {}, {}, "GET")
+        getSysAdvAdm = http_request(url + "/system_advanced_admin.php", {}, {}, {}, 45, "GET")
         if check_permissions(getSysAdvAdm):
             # Make GET request to /system_advanced_admin.php to check response, split the response and target the SSL cert selection HTML field
             getSysAdvAdmList = getSysAdvAdm["text"].split("<select class=\"form-control\" name=\"ssl-certref\" id=\"ssl-certref\">")[1].split("</select>")[0].split("<option value=")
@@ -2570,8 +2600,8 @@ def set_wc_certificate(server, user, key, certName):
                     # Update our CSRF, certref, and take our POST request and save a new GET request that should show our new configuration
                     wccData["__csrf_magic"] = get_csrf_token(url + "/system_advanced_admin.php", "GET")
                     wccData["ssl-certref"] = newWcc
-                    postSysAdvAdm = http_request(url + "/system_advanced_admin.php", wccData, {}, {}, "POST")
-                    checkSysAdvAdm = http_request(url + "/system_advanced_admin.php", {}, {}, {}, "GET")["text"]
+                    postSysAdvAdm = http_request(url + "/system_advanced_admin.php", wccData, {}, {}, 45, "POST")
+                    checkSysAdvAdm = http_request(url + "/system_advanced_admin.php", {}, {}, {}, 45, "GET")["text"]
                     checkSysAdvAdm = checkSysAdvAdm.split("<select class=\"form-control\" name=\"ssl-certref\" id=\"ssl-certref\">")[1].split("</select>")[0].split("<option value=")
                     # Parse the new GET response to a list of HTML selection options
                     for wcc in checkSysAdvAdm:
@@ -2611,8 +2641,8 @@ def get_firewall_aliases(server, user, key):
     # Check that authentication succeeded
     if aliases["ec"] == 2:
         # Check that we had permissions for this page
-        getAliasIds = http_request(url + "/firewall_aliases.php?tab=all", {}, {}, {}, "GET")    # Save our GET HTTP response
-        getAliasEdit = http_request(url + "/firewall_aliases_edit.php", {}, {}, {}, "GET")  # Save our GET HTTP response
+        getAliasIds = http_request(url + "/firewall_aliases.php?tab=all", {}, {}, {}, 45, "GET")    # Save our GET HTTP response
+        getAliasEdit = http_request(url + "/firewall_aliases_edit.php", {}, {}, {}, 45, "GET")  # Save our GET HTTP response
         if check_permissions(getAliasIds) and check_permissions(getAliasEdit):
             # GET aliases IDs from /firewall_aliases.php
             aliasIdTableBody = getAliasIds["text"].split("<tbody>")[1].split("</tbody>")[0]    # Pull the table body data from HTML response
@@ -2626,7 +2656,7 @@ def get_firewall_aliases(server, user, key):
                     idList.append(id)    # Add our current ID to the list
             # Loop through alias IDs and save values to our dictionary
             for i in idList:
-                getAliasIdInfo = http_request(url + "/firewall_aliases_edit.php?id=" + i, {}, {}, {}, "GET")    # Save our GET HTTP response
+                getAliasIdInfo = http_request(url + "/firewall_aliases_edit.php?id=" + i, {}, {}, {}, 45, "GET")    # Save our GET HTTP response
                 check_permissions(getAliasIdInfo)  # Check that we had permissions for this page
                 name = getAliasIdInfo["text"].split("<input class=\"form-control\" name=\"name\" id=\"name\" type=\"text\" value=\"")[1].split("\"")[0]    # Save our alias name
                 descr = getAliasIdInfo["text"].split("<input class=\"form-control\" name=\"descr\" id=\"descr\" type=\"text\" value=\"")[1].split("\"")[0]    # Save our alias description
@@ -2701,12 +2731,12 @@ def modify_firewall_alias(server, user, key, aliasName, newValues):
             # Make our post request if no errors were encountered
             if aliasModded == 2:
                 # Check that we have permissions to run
-                postPfAliasData = http_request(url + "/firewall_aliases_edit.php", {}, {}, {}, "GET")
+                postPfAliasData = http_request(url + "/firewall_aliases_edit.php", {}, {}, {}, 45, "GET")
                 if check_permissions(postPfAliasData):
                     # Submit our post requests
-                    postPfAliasData = http_request(url + "/firewall_aliases_edit.php", aliasPostData, {}, {}, "POST")
+                    postPfAliasData = http_request(url + "/firewall_aliases_edit.php", aliasPostData, {}, {}, 45, "POST")
                     saveChangesPostData = {"__csrf_magic" : get_csrf_token(wcProtocol + "://" + server + "/firewall_aliases.php", "GET"), "apply" : "Apply Changes"}
-                    saveChanges = http_request(url + "/firewall_aliases.php", saveChangesPostData, {}, {}, "POST")
+                    saveChanges = http_request(url + "/firewall_aliases.php", saveChangesPostData, {}, {}, 45, "POST")
                     aliasModded = 0    # Assign our success exit code
                 # If we did not have permissions to the page
                 else:
@@ -2731,8 +2761,8 @@ def get_virtual_ips(server, user, key):
     # Check that authentication succeeded
     if virtIps["ec"] == 2:
         # Check that we had permissions for this page
-        getVirtIpIds = http_request(url + "/firewall_virtual_ip.php", {}, {}, {}, "GET")    # Save our GET HTTP response
-        getVirtIpEdit = http_request(url + "/firewall_virtual_ip_edit.php", {}, {}, {}, "GET")  # Save our GET HTTP response
+        getVirtIpIds = http_request(url + "/firewall_virtual_ip.php", {}, {}, {}, 45, "GET")    # Save our GET HTTP response
+        getVirtIpEdit = http_request(url + "/firewall_virtual_ip_edit.php", {}, {}, {}, 45, "GET")  # Save our GET HTTP response
         if check_permissions(getVirtIpIds) and check_permissions(getVirtIpEdit):
             # Parse our HTML output to capture the ID of each virtual IP
             if "<tbody>" in getVirtIpIds["text"]:
@@ -2746,7 +2776,7 @@ def get_virtual_ips(server, user, key):
                     virtIps["virtual_ips"][virtIpId] = {"id":virtIpId,"descr_name":virtIpDescrName}    # Save each virtual IP to it's own nested dictionary
                     # Pull further configuration from the firewall_virtual_ip_edit.php page if our ID is valid
                     if virtIpId.isdigit():
-                        getAdvVirtIpData = http_request(url + "/firewall_virtual_ip_edit.php?id=" + virtIpId, {}, {}, {}, "GET")
+                        getAdvVirtIpData = http_request(url + "/firewall_virtual_ip_edit.php?id=" + virtIpId, {}, {}, {}, 45, "GET")
                         # Check that we have a TYPE configuration table
                         requiredTags = ["<span class=\"element-required\">Type</span>","<span class=\"element-required\">Interface</span>"]    # Set list of tags required for this section
                         if all(tag in getAdvVirtIpData["text"] for tag in requiredTags):
@@ -2874,8 +2904,8 @@ def add_virtual_ip(server, user, key, mode, iface, subnet, subnetBit, expansion,
             "apply" : "Apply Changes"
         }
         # Make our POST requests
-        postVip = http_request(url + "/firewall_virtual_ip_edit.php", vipPostDict, {}, {}, "POST")
-        saveVip = http_request(url + "/firewall_virtual_ip.php", vipSavePostDict, {}, {}, "POST")
+        postVip = http_request(url + "/firewall_virtual_ip_edit.php", vipPostDict, {}, {}, 45, "POST")
+        saveVip = http_request(url + "/firewall_virtual_ip.php", vipSavePostDict, {}, {}, 45, "POST")
         # Check that our new virtual IP is now in our configuration
         newVips = get_virtual_ips(server,user,key)    # Pull our current Virtual IP configuration
         for id,data in newVips["virtual_ips"].items():
@@ -2908,7 +2938,7 @@ def get_status_carp(server, user, key):
     # Check that authentication succeeded
     if carp["ec"] == 2:
         # Check that we had permissions for this page
-        getCarpStatusData = http_request(url + "/status_carp.php", {}, {}, {}, "GET")    # Save our GET HTTP response
+        getCarpStatusData = http_request(url + "/status_carp.php", {}, {}, {}, 45, "GET")    # Save our GET HTTP response
         if check_permissions(getCarpStatusData):
             # Check that we have a CARP configuration to parse
             if carpUnconfiguredMsg not in getCarpStatusData["text"]:
@@ -2944,6 +2974,49 @@ def get_status_carp(server, user, key):
             carp["ec"] = 15    # Return exit code 15 (permissions denied)
     # Return our dictionary
     return carp
+
+# set_carp_maintenance() enables or disables CARP maintenance mode
+def set_carp_maintenance(server, user, key, enable):
+    # Local variables
+    mmAdded = 2    # Initialize our function return code (default 2 as error encountered)
+    currentCarp = get_status_carp(server,user,key)    # Pull our current CARP status
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
+    # Check that we successfully pulled our existing CARP configuration
+    if currentCarp["ec"] == 0:
+        # Check that CARP is enabled
+        if len(currentCarp["carp"]["carp_interfaces"]) > 0:
+            # Check that we are actually changing the value before bothering with a POST request
+            if currentCarp["carp"]["maintenance_mode"] != enable:
+                # Format our POST data dictionary
+                mmPostData = {"__csrf_magic":get_csrf_token(url + "/status_carp.php", "GET"), "carp_maintenancemode":""}
+                # Check whether user want to enable or disable maintenance mode
+                if enable:
+                    mmPostData["carp_maintenancemode"] = "Enter Persistent CARP Maintenance Mode"    # Enter maintenance mode POST value
+                elif not enable:
+                    mmPostData["carp_maintenancemode"] = "Leave Persistent CARP Maintenance Mode"    # Exit maintenance mode POST value
+                # Make our POST request but don't wait for a response
+                setMmPost = http_request(url + "/status_carp.php", mmPostData, {}, {}, 45, "POST")    # POST our change to pfSense
+                # Check that our value was set correctly
+                updatedCarp = get_status_carp(server, user, key)  # Pull our updated CARP status
+                if updatedCarp["ec"] == 0:
+                    if updatedCarp["carp"]["maintenance_mode"] == enable:
+                        mmAdded = 0   # Assign success exit code
+                # If we could not pull our exist CARP status, exit on function exit code
+                else:
+                    mmAdded = currentCarp["ec"]    # Return the exit code returned by our get_status_carp() function
+            # If we are already set to the requested mode, return success
+            else:
+                mmAdded = 0  # Assign success exit code
+        # If pfSense does not have any configured CARP interfaces
+        else:
+            mmAdded = 4    # Assign exit code 4 (CARP not configured)
+    # If we could not pull our exist CARP status, exit on function exit code
+    else:
+        mmAdded = currentCarp["ec"]    # Return the exit code returned by our get_status_carp() function
+    # Return our exit code
+    return mmAdded
+
+# set_carp() either enables or disables CARP temporarily
 
 # main() is the primary function that maps arguments to other functions
 def main():
@@ -3895,6 +3968,29 @@ def main():
                 else:
                     print(get_exit_message(carpStatus["ec"],pfsenseServer,pfsenseAction,"",""))    # Print our error message
                     sys.exit(carpStatus["ec"])    # Exit on our non-zero code
+
+            # Assign functions for flag --set-carp-maintenance
+            elif pfsenseAction == "--set-carp-maintenance":
+                # Action variables
+                enableToggle = filter_input(thirdArg) if len(sys.argv) > 3 else input("CARP Maintenance Mode [enable,disable]: ")    # Gather our mode toggle from the user either inline or interactively
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                altToggleTense1 = "enabled" if enableToggle == "enable" else ""    # Create an alternate tense for enabled
+                altToggleTense1 = "disabled" if enableToggle == "disable" else altToggleTense1    # Create an alternate tense for disabled
+                altToggleTense2 = "enabling" if enableToggle == "enable" else ""    # Create an alternate tense for enabling
+                altToggleTense2 = "disabling" if enableToggle == "disable" else altToggleTense2    # Create an alternate tense disabling
+                # INPUT VALIDATION
+                # Check that our toggle is valid
+                if enableToggle.lower() in ["enable","disable"]:
+                    enableToggle = True if enableToggle.lower() == 'enable' else False    # Switch our string keywords to booleans
+                    # Run our function to POST maintenance mode setting
+                    setCarpMode = set_carp_maintenance(pfsenseServer, user, key, enableToggle)    # Save our function exit code
+                    print(get_exit_message(setCarpMode, pfsenseServer, pfsenseAction, altToggleTense1, altToggleTense2))    # Print our error message
+                    sys.exit(setCarpMode)    # Exit on our function return code
+                # If our enable toggle is invalid
+                else:
+                    print(get_exit_message("invalid_toggle", pfsenseServer, pfsenseAction, enableToggle,""))
+                    sys.exit(1)
 
             # Assign functions for flag --read-arp
             elif pfsenseAction == "--read-arp":

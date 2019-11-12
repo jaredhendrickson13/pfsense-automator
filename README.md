@@ -360,7 +360,12 @@ Commands
         - `--iface` (`-i`) : Return only virtual IPs configured on a specific interface (e.g. `--iface=wan`) _Note: this uses the pf interface ID not the user configured ID_
         - `--subnet` (`-s`) : Return virtual IPs matching a subnet expression (e.g. `--subnet=127.0.0.1/32`) _Note: this filter matches entries that start with your expression, the more specific your expression the more specific your results will be_
         - `--json=<directory_path>` : Exports virtual IP data to a JSON file given an existing directory
-        
+
+- `--set-carp-maintenance`: Enables or disables CARP persistent maintenance mode. _Note: Enabling maintenance mode on the MASTER node is not recommended, command timeouts are likely to occur if you are enabling maintenance on the MASTER node_
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --set-carp-maintenance <toggle>`
+    - **Arguments**:
+    - `<toggle>` : Specify whether to enable or disable CARP maintenance mode (`enable`,`disable`)
+
 - `--modify-alias` : Modifies an existing Firewall Alias. Existing entries will be overwritten. 
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --modify-alias <alias name> <IPs or hostnames>`
     - **Arguments**:
