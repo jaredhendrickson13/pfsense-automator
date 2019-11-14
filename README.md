@@ -18,12 +18,16 @@ Supported pfSense builds: 2.3.x*, 2.4.x, 2.5.x<br>
 Syntax
 ------------
 pfsense-automator can be run either inline (for automation and scriptability) or interactively via command line (for added security or assistance). If the command's syntax is fulfilled completely, then inline mode is assumed and no input prompts will display. However, if you leave out an argument (you may specify some arguments inline and specify the rest interctively), you will be prompted to input a value for that argument. This is also useful if you cannot remember the exact syntax for a command
-
 - INLINE SYNTAX
     - `pfsense-automator <pfSense IP or hostname> <COMMAND> <ARGUMENTS> -u <USERNAME> -p <PASSWORD>`
 - INTERACTIVE SYNTAX
     - `pfsense-automator <pfSense IP or hostname> <COMMAND>` 
 
+- ALTERNATE PROTOCOL & PORT
+By default, pfsense-automator uses the HTTPS protocol over port 443. Some users may have pfSense's webConfigurator configured to work off of an alternate protocol and or port. You may format the desired protocol and port to the `<pfSense IP or hostname>` field as a URL. _Note: using HTTP protocol is not recommended as this will allow login credentials to pass in cleartext over your network(s)_
+    - Examples
+        - `pfsense-automator http://127.0.0.1:80 --check-version -u admin -p pfsense`    (Makes an HTTP connection to pfSense over port 80)
+        - `pfsense-automator 127.0.0.1:8443 --check-version -u admin -p pfsense` (Makes an HTTPS connection to pfSense over port 8443)
 
 Commands
 ------------

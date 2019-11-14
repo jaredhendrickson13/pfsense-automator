@@ -52,7 +52,12 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)    # Disable
 ### FUNCTIONS ###
 # no_escape() Prevents SIGINT from killing the script unsafely
 def no_escape(signum, frame):
-    sys.exit(0)
+    try:
+        print("")
+        os._exit(0)
+    except Exception as x:
+        print("")
+        sys.exit(0)
 # Set the signal handler to prevent exiting the script without killing the tunnel
 signal.signal(signal.SIGINT, no_escape)
 
@@ -394,7 +399,7 @@ def get_exit_message(ec, server, command, data1, data2):
         },
         # Error/success messages for --read-carp-status
         "--read-carp-status" : {
-            2 : "Error: Unexpected error checking CARP status",
+            2 : "Error: Unexpected error checking CARP status. No CARP interfaces found",
             3 : globalAuthErrMsg,
             6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
@@ -2967,8 +2972,8 @@ def get_status_carp(server, user, key):
                 # Check pfSync node IDs
                 if "<br />pfSync nodes:<br /><pre>" in getCarpStatusData["text"]:
                     carp["carp"]["pfsync_nodes"] = getCarpStatusData["text"].split("<br />pfSync nodes:<br /><pre>")[1].split("</pre>")[0].split("\n")[:-1]    # Split each of our nodes into a list
-            # Update our exit code to success
-            carp["ec"] = 0
+                # Update our exit code to success
+                carp["ec"] = 0
         # If we did not have permissions
         else:
             carp["ec"] = 15    # Return exit code 15 (permissions denied)
