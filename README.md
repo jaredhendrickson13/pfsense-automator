@@ -29,6 +29,10 @@ By default, pfsense-automator uses the HTTPS protocol over port 443. Some users 
         - `pfsense-automator http://127.0.0.1:80 --check-version -u admin -p pfsense`    (Makes an HTTP connection to pfSense over port 80)
         - `pfsense-automator 127.0.0.1:8443 --check-version -u admin -p pfsense` (Makes an HTTPS connection to pfSense over port 8443)
 
+- PFSENSE-AUTOMATOR VERSION<br>
+To check the current version of pfsense-automator, you can run the following command:
+`pfsense-automator -v`
+
 Commands
 ------------
 - `--check-auth` : Attempts to sign in using specified credentials. _WARNING: abuse of this function may result in a WebConfigurator lockout_
