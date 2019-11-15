@@ -58,7 +58,9 @@ def copy_install_dir(src, dest):
 def install(install, platform):
     # Local variables
     installed = 2    # Assign default return code to track whether software installed successfully
-    install_cwd = os.path.dirname(sys.argv[0])    # Save our current working directory
+    run_cwd = os.path.dirname(sys.argv[0])    # Save the directory our script is running in
+    usr_cwd = os.getcwd()   # Save the users current working directory
+    install_cwd = run_cwd if exec_name in run_cwd else usr_cwd    # Save our current working directory
     req_depends = ["certifi",exec_name]    # Assign list of required dependencies to look for
     dev_null = open(os.devnull,"w")    # Start dev null write object
     os_path_data = {

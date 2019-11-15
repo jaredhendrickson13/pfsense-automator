@@ -8,20 +8,20 @@
 # ----------------------------------------------------------------------------------------------------------------
 # IMPORT MODULES
 import datetime
+import fcntl
 import getpass
+import io
 import json
 import os
-import io
 import platform
 import requests
 import signal
 import socket
+import struct
 import sys
+import termios
 import time
 import urllib3
-import fcntl
-import termios
-import struct
 
 # Variables
 softwareVersion = "v0.0.4 " + platform.system() + "/" + platform.machine()    # Define our current version of this software
