@@ -9,10 +9,20 @@ import platform
 import os
 import subprocess
 import shutil
+import getpass
+
+# CLASSES
+class colors:
+    OK = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    RESET = '\033[0m'
 
 # GLOBAL VARIABLES
 supported_platforms = ["Darwin","Linux","Windows","FreeBSD"]    # Create a list of our supported platforms
 exec_name = "pfsense-automator"    # Save our executable name
+success_msg = colors.OK + "SUCCESS" + colors.RESET    # Format our success msg
+error_msg = colors.FAIL + "ERROR  " + colors.RESET    # Format our fail msg
 
 # FUNCTIONS
 # check_os_platform() checks what platform the target system is running
@@ -39,80 +49,92 @@ def copy_install_dir(src, dest):
         copied = True    # Assign a true value
     # If we received an OS error, run alternate check
     except Exception as copy_err:
-        print("- ERROR " + copy_err)
+        print("- " + error_msg + " : " + copy_err)
         copied = False    # Reinforce False value if failed
     # Return our bool
     return copied
 
 # install_darwin() runs through the processes required to install pfsense-automator on Mac/Darwin
-def install_darwin(install):
+def install(install, platform):
     # Local variables
     installed = 2    # Assign default return code to track whether software installed successfully
-    dep_dest = "/usr/local/share/pfsense-automator"    # Assign the destination directory for our software (shared objects, libraries, executables)
-    exec_link_dest = "/usr/local/bin/pfsense-automator"    # Assign our softlink executable destination
-    install_cwd = os.getcwd()    # Save our current working directory
-    req_depends = ["Python",exec_name,"base_library.zip"]    # Assign list of required dependencies to look for
+    install_cwd = os.path.dirname(sys.argv[0])    # Save our current working directory
+    req_depends = ["certifi",exec_name]    # Assign list of required dependencies to look for
     dev_null = open(os.devnull,"w")    # Start dev null write object
-    # Check if we are installing or uninstalling
-    if install:
-        # START INSTALL
-        print("- Install platform `Darwin` detected...starting install")    # Print our install platform
-        # Check that we are in the install directory
-        if install_cwd.rstrip("/").split("/")[-1] == exec_name:
-            # Check if dependencies are found
-            dep_found = False    # Create a bool tracker to check if we found our required dependencies
-            dir_list = os.listdir(install_cwd)    # Save a list of all the files in our directory
-            for dep in req_depends:
-                # Check if our dependencies are found
-                if dep in dir_list:
-                    dep_found = True    # Set our value to true
+    os_path_data = {
+        "Darwin" : {"data_path":"/usr/local/share/pfsense-automator","link_path":"/usr/local/bin/pfsense-automator"},
+        "Linux" : {"data_path":"/usr/share/pfsense-automator","link_path":"/usr/bin/pfsense-automator"},
+        "FreeBSD" : {"data_path":"/usr/share/pfsense-automator","link_path":"/usr/bin/pfsense-automator"},
+    }
+    # Check that we have permissions or if we're on a Mac (which doesn't require root privilege to install)
+    if getpass.getuser() == "root" or platform == "Darwin":
+        # Check if we are installing or uninstalling
+        if install:
+            # START INSTALL
+            print("- " + success_msg + " : Identified install platform `" + platform + "`...")
+            # Check that we are in the install directory
+            if install_cwd.rstrip("/").split("/")[-1] == exec_name:
+                # Check if dependencies are found
+                dep_found = False    # Create a bool tracker to check if we found our required dependencies
+                dir_list = os.listdir(install_cwd)    # Save a list of all the files in our directory
+                for dep in req_depends:
+                    # Check if our dependencies are found
+                    if dep in dir_list:
+                        dep_found = True
+                    else:
+                        dep_found = False
+                        break
+                # Check if our dependencies were found
+                if dep_found:
+                    print("- " + success_msg + " : Located dependencies...")
+                    # Remove current install if present
+                    if os.path.exists(os_path_data[platform]["data_path"]):
+                        shutil.rmtree(os_path_data[platform]["data_path"])
+                    # Copy our files
+                    copy_install = copy_install_dir(install_cwd,os_path_data[platform]["data_path"])
+                    # Check if files were copies
+                    if copy_install:
+                        print("- " + success_msg + " : Installed dependencies...")
+                        # Check if symlink already exists
+                        if os.path.exists(os_path_data[platform]["link_path"]):
+                            os.remove(os_path_data[platform]["link_path"])
+                        try:
+                            os.symlink(os_path_data[platform]["data_path"] + "/" + exec_name, os_path_data[platform]["link_path"])    # Create our symlink
+                            print("- " + success_msg + " : Created symlink at " + os_path_data[platform]["link_path"] + "...")    # Print Success message
+                        except Exception as sym_err:
+                            print("- " + error_msg + " : Could not create symlink `" + sym_err + "`")
+                        # Try to run the newly installed program
+                        try:
+                            exec_init = subprocess.call([exec_name,"-v"],stdout=dev_null,stderr=dev_null)    # Initialize our software and ensure we get a proper exit code
+                            installed = 0 if os.path.exists(os_path_data[platform]["link_path"]) and exec_init == 0 else installed    # Return code 0 if symlink exists and exit code is 0
+                        except OSError:
+                            print("- " + error_msg + " : Could not execute installed software. Ensure you downloaded the correct installer for your platform")
+                        # Final success messages
+                        if installed == 0:
+                            print("- " + success_msg + " : Installed pfsense-automator. Restart your shell and type `pfsense-automator` to get started.")
+                    else:
+                        print("- " + error_msg + " : Could not install dependencies")
                 else:
-                    dep_found = False   # Set our value to false
-                    break    # Break our loop
-            # Check if our dependencies were found
-            if dep_found:
-                print("- SUCCESS locating dependencies")
-                # Remove current install if present
-                if os.path.exists(dep_dest):
-                    shutil.rmtree(dep_dest)
-                # Copy our files
-                copy_install = copy_install_dir(install_cwd,dep_dest)    # Copy our install data
-                # check if files were copies
-                if copy_install:
-                    print("- SUCCESS installing dependencies...creating symlink")
-                    # Check if symlink already exists
-                    if os.path.exists(exec_link_dest) and os.path.islink(exec_link_dest):
-                        os.remove(exec_link_dest)
-                    try:
-                        os.symlink(dep_dest + "/" + exec_name, exec_link_dest)    # Create our symlink
-                        print("- SUCCESS creating symlink at " + exec_link_dest)    # Print Success message
-                        exec_init = subprocess.call([exec_name,"-v"],stdout=dev_null,stderr=dev_null)    # Initialize our software and ensure we get a proper exit code
-                        installed = 0 if os.path.exists(exec_link_dest) and exec_init == 0 else installed    # Return code 0 if symlink exists and exit code is 0
-                    except Exception as sym_err:
-                        print("- ERROR creating symlink `" + sym_err + "`")
-                    # Final success messages
-                    if installed == 0:
-                        print("- SUCCESS installing pfsense-automator. Restart your shell and type `pfsense-automator` to get started.")
-                else:
-                    print("- ERROR installing dependencies")
+                    print("- " + error_msg + " : Could not locate dependencies")
+            # If we are not in the install directory
             else:
-                print("- ERROR locating dependencies")
-        # If we are not in the install directory
+                print("- " + error_msg + " : install.py is running outside of install folder")
+        # If we are wanting to uninstall
         else:
-            installed = 3    # Assign return code 3 (not in install directory)
-    # If we are wanting to uninstall
+            user_confirm = input("Are you sure you would like to uninstall pfsense-automator? (y/n)")
+            # Check if user confirms they want to uninstall
+            if user_confirm.lower() in ["yes","y"]:
+                # Check if expected files exist
+                if os.path.exists(os_path_data[platform]["link_path"]):
+                    os.remove(os_path_data[platform]["link_path"])
+                if os.path.exists(os_path_data[platform]["data_path"]):
+                    shutil.rmtree(os_path_data[platform]["data_path"])
+                # Check that expected files are now gone
+                if not os.path.exists(os_path_data[platform]["link_path"]) and not os.path.exists(os_path_data[platform]["data_path"]):
+                    print("- " + success_msg + " : Uninstalled pfsense-automator")
+    # If we do not have permission
     else:
-        user_confirm = input("Are you sure you would like to uninstall pfsense-automator? (y/n)")
-        # Check if user confirms they want to uninstall
-        if user_confirm.lower() in ["yes","y"]:
-            # Check if expected files exist
-            if os.path.exists(exec_link_dest):
-                os.remove(exec_link_dest)
-            if os.path.exists(dep_dest):
-                shutil.rmtree(dep_dest)
-            # Check that expected files are now gone
-            if not os.path.exists(exec_link_dest) and not os.path.exists(dep_dest):
-                print("- SUCCESS uninstalling pfsense-automator")
+        print("- " + error_msg + " : Installer requires root privileges")
     # Return our install return code
     return installed
 
@@ -122,9 +144,11 @@ def main():
     uninstall_input = sys.argv[1] if len(sys.argv) > 1 else ""    # Capture our user arguments
     install_mode = False if uninstall_input == "uninstall" else True    # Determine if we are installing or uninstalling
     host_platform = check_os_platform()    # Get our host platform
-    # If host platform is a Mac/Darwin
-    if host_platform == "Darwin":
-        inst = install_darwin(install_mode)    # Install on Darwin
+    # Check if our host's platform is found in our supported platforms
+    if host_platform in supported_platforms:
+        inst = install(install_mode,host_platform)    # Install on detected platforms
+    else:
+        print("- ERROR detecting platform. Your OS may be unsupported")
 
 # Run main()
 main()

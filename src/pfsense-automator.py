@@ -65,6 +65,7 @@ signal.signal(signal.SIGINT, no_escape)
 def get_exit_message(ec, server, command, data1, data2):
     # Local Variables
     exitMessage = ""    # Define our return value as empty string
+    cmdFlgLen = 30   # Set the maximum length of our command flags to use in formatting table data
     globalDnsRebindMsg = "Error: DNS rebind detected. Ensure `" + server + "` is listed in System > Advanced > Alt. Hostnames"
     globalAuthErrMsg = "Error: Authentication failed"
     globalPlatformErrMsg = "Error: `" + server + "` does not appear to be running pfSense"
@@ -73,26 +74,27 @@ def get_exit_message(ec, server, command, data1, data2):
     ecd = {
         # Generic error message that don't occur during commands
         "generic" : {
-            "invalid_arg" : "Error: Invalid argument. Unknown action `" + data1 + "`",
+            "invalid_arg" : "Error: Invalid argument. Unknown command `" + data1 + "`",
             "connect_err" : "Error: Failed connection to " + server + ":" + str(wcProtocolPort) + " via " + wcProtocol,
             "invalid_host" : "Error: Invalid hostname. Expected syntax: `pfsense-automator <HOSTNAME or IP> <COMMAND> <ARGS>`",
             "timeout" : "Error: Connection timeout",
             "connection" : "Error: Connection dropped by remote host",
             "version" : "pfsense-automator " + softwareVersion
         },
-        # Error/success messages for --add-vlan flag
-        "--add-vlan" : {
-            0 : "Successfully added VLAN `" + data1 + "` on `" + data2 + "`",
-            1 : "Error: No usable interfaces were detected",
-            2 : "Error: Unexpected error adding VLAN `" + data1 + "` on `" + data2 + "`",
-            3 : globalAuthErrMsg,
-            6 : globalPlatformErrMsg,
-            7 : "Error: Interface `" + data2 + "` does not exist",
-            8 : "Error: VLAN `" + data1 + "` already exists on interface `" + data2 + "`",
-            10 : globalDnsRebindMsg,
-            15 : globalPermissionErrMsg,
-            "invalid_vlan" : "Error: VLAN `" + data1 + "` out of range. Expected 1-4094",
-            "invalid_priority" : "Error: VLAN priority `" + data1 + "` out of range. Expected 0-7"
+        # Error/success messages for --check-auth flag
+        "--check-auth": {
+            "success": "Authentication successful",
+            "fail": "Error: Authentication failed",
+            "descr": structure_whitespace("  --check-auth",cmdFlgLen," ",True) + " : Test authentication credentials"
+        },
+        # Error/success messages for --check-version
+        "--check-version": {
+            2: "Error: Could not determine pfSense version",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "descr": structure_whitespace("  --check-version",cmdFlgLen," ",True) + " : Check the pfSense version running on remote host"
         },
         # Error/success messages for --read-general-setup flag
         "--read-general-setup": {
@@ -104,7 +106,8 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_filter": "Error: Invalid filter `" + data1 + "`",
             "export_err": "Error: export directory `" + data1 + "` does not exist",
             "export_success": "Successfully exported general setup to " + data1,
-            "export_fail": "Failed to export general setup as JSON"
+            "export_fail": "Failed to export general setup as JSON",
+            "descr" : structure_whitespace("  --read-general-setup",cmdFlgLen," ",True) + " : Read configuration data found in System > General Setup"
         },
         # Error/success messages for --set-system-hostname
         "--set-system-hostname": {
@@ -116,6 +119,7 @@ def get_exit_message(ec, server, command, data1, data2):
             10: globalDnsRebindMsg,
             15: globalPermissionErrMsg,
             "inter_warn": "Warning: if DNS Rebind checks are enabled, changing the system hostname may result in an FQDN lockout",
+            "descr": structure_whitespace("  --set-system-hostname",cmdFlgLen," ",True) + " : Set the pfSense system hostname"
         },
         # Error/success messages for --read-adv-admin flag
         "--read-adv-admin": {
@@ -127,20 +131,49 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_filter": "Error: Invalid filter `" + data1 + "`",
             "export_err": "Error: export directory `" + data1 + "` does not exist",
             "export_success": "Successfully exported advanced admin options to " + data1,
-            "export_fail": "Failed to export advanced admin options as JSON"
+            "export_fail": "Failed to export advanced admin options as JSON",
+            "descr": structure_whitespace("  --read-adv-admin",cmdFlgLen," ",True) + " : Read configuration data found in System > Advanced > Admin Access"
         },
-        # Error/success messages for --read-adv-admin flag
-        "--read-users": {
-            2: "Error: Unexpected error reading user database",
+        # Error/success messages for --read-sslcerts flag
+        "--read-sslcerts": {
+            2: "Error: Unexpected error reading SSL certificates",
             3: globalAuthErrMsg,
             6: globalPlatformErrMsg,
             10: globalDnsRebindMsg,
             15: globalPermissionErrMsg,
-            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
-            "invalid_user": "Error: User `" + data1 + "` does not exist",
+            "read_err": "Error: failed to read SSL certificates from pfSense. You may not have any certificates installed",
             "export_err": "Error: export directory `" + data1 + "` does not exist",
-            "export_success": "Successfully exported user data to " + data1,
-            "export_fail": "Failed to export user data as JSON"
+            "export_success": "Successfully exported SSL certificate data to " + data1,
+            "export_fail": "Failed to export SSL certificate data as JSON",
+            "descr": structure_whitespace("  --read-sslcerts",cmdFlgLen," ",True) + " : Read SSL certificates data found in System > Cert. Manager > Certificates"
+        },
+        # Error/success messages for --add-sslcert flag
+        "--add-sslcert": {
+            0: "SSL certificate successfully uploaded",
+            2: "Error: Failed to upload SSL certificate",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "no_cert": "Error: No certificate file found at `" + data1 + "`",
+            "no_key": "Error: No key file found at `" + data1 + "`",
+            "empty": "Error: Certificate or key file is empty",
+            "descr": structure_whitespace("  --add-sslcert",cmdFlgLen," ",True) + " : Import SSL certificate and key from file"
+        },
+        # Error/success messages for --set-wc-sslcert
+        "--set-wc-sslcert": {
+            0: "Successfully changed WebConfigurator SSL certificate to `" + data1 + "`",
+            1: "Error: SSL certificate `" + data1 + "` is already in use",
+            2: "Error: Failed setting SSL certificate `" + data1 + "`",
+            3: globalAuthErrMsg,
+            4: "Error: SSL certificate `" + data1 + "` matches multiple certificates",
+            5: "Error: Certificate `" + data1 + "` not found",
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "unknown_err": "Error: An unknown error has occurred",
+            "descr": structure_whitespace("  --set-wc-sslcert",cmdFlgLen," ",True) + " : Set the SSL certificate used by the webConfigurator"
+
         },
         # Error/success messages for --setup-wc
         "--setup-wc": {
@@ -159,6 +192,7 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_dnsrebind": "Error: Unknown DNS rebind checking option `" + data1 + "`",
             "invalid_httpreferer": "Error: Unknown HTTP_REFERER checking option `" + data1 + "`",
             "invalid_tabtext": "Error: Unknown display hostname in tab option `" + data1 + "`",
+            "descr": structure_whitespace("  --setup-wc",cmdFlgLen," ",True) + " : Configure webConfigurator options"
         },
         # Error/success messages for --setup-wc
         "--set-wc-port": {
@@ -171,6 +205,7 @@ def get_exit_message(ec, server, command, data1, data2):
             15: globalPermissionErrMsg,
             "invalid_protocol": "Error: Unknown protocol `" + data1 + "`. Expected http or https",
             "invalid_port": "Error: Invalid port `" + data2 + "`. Expected value between 1-65535",
+            "descr": structure_whitespace("  --set-wc-port", cmdFlgLen, " ", True) + " : Set the webConfigurator protocol and port"
         },
         # Error/success messages for --setup-console
         "--setup-console": {
@@ -180,7 +215,8 @@ def get_exit_message(ec, server, command, data1, data2):
             6: globalPlatformErrMsg,
             10: globalDnsRebindMsg,
             15: globalPermissionErrMsg,
-            "invalid_option" : "Error: Unknown console option value `" + data1 + "`",
+            "invalid_option": "Error: Unknown console option value `" + data1 + "`",
+            "descr": structure_whitespace("  --setup-console", cmdFlgLen, " ", True) + " : Configure console options"
         },
         # Error/success messages for --setup-ssh
         "--setup-ssh": {
@@ -193,6 +229,69 @@ def get_exit_message(ec, server, command, data1, data2):
             20: "Error: Unknown legacy SSH authentication option `" + data1 + "`",
             21: "Error: Unknown SSH authentication option `" + data1 + "`",
             "invalid_enable": "Error: Unknown enable value `" + data1 + "`",
+            "descr": structure_whitespace("  --setup-ssh", cmdFlgLen, " ", True) + " : Configure SSH options"
+        },
+        # Error/success messages for --read-tunables flag
+        "--read-tunables": {
+            2: "Error: Unexpected error reading system tunables",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err": "Error: export directory `" + data1 + "` does not exist",
+            "export_success": "Successfully exported tunable data to " + data1,
+            "export_fail": "Failed to export tunable data as JSON",
+            "descr": structure_whitespace("  --read-tunables", cmdFlgLen, " ", True) + " : Read tunable configuration from System > Advanced > System Tunables"
+        },
+        # Error/success messages for --add-tunable flag
+        "--add-tunable": {
+            0: "Successfully added tunable `" + data1 + "` to `" + server + "`",
+            2: "Error: Unexpected error adding system tunable",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            8: "Error: Tunable `" + data1 + "` already exists",
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "descr": structure_whitespace("  --add-tunable", cmdFlgLen, " ", True) + " : Add a new system tunable"
+        },
+        # Error/success messages for --read-adv-admin flag
+        "--read-users": {
+            2: "Error: Unexpected error reading user database",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "invalid_user": "Error: User `" + data1 + "` does not exist",
+            "export_err": "Error: export directory `" + data1 + "` does not exist",
+            "export_success": "Successfully exported user data to " + data1,
+            "export_fail": "Failed to export user data as JSON",
+            "descr": structure_whitespace("  --read-users", cmdFlgLen, " ", True) + " : Read user data from System > User Manager > Users"
+        },
+        # Error/success messages for -add-ldapserver
+        "--add-ldapserver": {
+            0: "Successfully added LDAP server `" + data1 + "` on `" + server + "`",
+            2: "Error: Failed to configure LDAP server",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_userAlt": "Error: Invalid username alteration value `" + data1 + "`. Expected yes or no",
+            "invalid_encode": "Error: Invalid encode value `" + data1 + "`. Expected yes or no",
+            "invalid_rfc2307": "Error: Invalid RFC2307 value `" + data1 + "`. Expected yes or no",
+            "invalid_ldapTemplate": "Error: Invalid LDAP template value `" + data1 + "`",
+            "invalid_bindAnon": "Error: Invalid bind anonymous value `" + data1 + "`. Expected yes or no",
+            "invalid_extQuery": "Error: Invalid extended query value `" + data1 + "`. Expected yes or no",
+            "invalid_searchScope": "Error: Invalid search scope value `" + data1 + "`",
+            "invalid_timeout_range": "Error: server timeout value `" + data1 + "` out of range. Expected 1-9999999999",
+            "invalid_timeout": "Error: Invalid timeout value `" + data1 + "`",
+            "invalid_protocol": "Error: Invalid LDAP version value `" + data1 + "`. Expected 2 or 3",
+            "invalid_transport": "Error: Unknown transport type `" + data1 + "`",
+            "invalid_port": "Error: Invalid LDAP port value `" + data1 + "`",
+            "invalid_portrange": "Error: LDAP port `" + data1 + "` out of range. Expected 1-65535",
+            "missing_args": "Error: missing arguments",
+            "descr": structure_whitespace("  --add-ldapserver", cmdFlgLen, " ", True) + " : Add a new LDAP authentication server ",
         },
         # Error/success messages for --read-arp flag
         "--read-arp": {
@@ -204,7 +303,8 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_filter": "Error: Invalid filter `" + data1 + "`",
             "export_err": "Error: export directory `" + data1 + "` does not exist",
             "export_success": "Successfully exported ARP table to " + data1,
-            "export_fail": "Failed to export ARP table as JSON"
+            "export_fail": "Failed to export ARP table as JSON",
+            "descr": structure_whitespace("  --read-arp", cmdFlgLen, " ", True) + " : Read ARP table from Diagnostics > ARP Table",
         },
         # Error/success messages for --read-xml flag
         "--read-xml": {
@@ -219,83 +319,97 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_rrd": "Error: invalid RRD option `" + data1 + "`",
             "invalid_encrypt": "Error: invalid encryption option `" + data1 + "`",
             "export_success": "Successfully exported XML configuration to " + data1,
-            "export_fail": "Failed to export XML configuration"
+            "export_fail": "Failed to export XML configuration",
+            "descr": structure_whitespace("  --read-xml", cmdFlgLen, " ", True) + " : Read or save XML configuration from Diagnostics > Backup & Restore",
         },
         # Error/success messages for --upload-xml flag
-        "--upload-xml" : {
-            0 : "Successfully uploaded XML configuration to restoration area `" + data1 + "`. A reboot may be required.",
-            2 : "Error: Failed to restore XML configuration. Your XML file may be malformed",
+        "--upload-xml": {
+            0: "Successfully uploaded XML configuration to restoration area `" + data1 + "`. A reboot may be required.",
+            2: "Error: Failed to restore XML configuration. Your XML file may be malformed",
             3: globalAuthErrMsg,
             6: globalPlatformErrMsg,
             10: globalDnsRebindMsg,
             15: globalPermissionErrMsg,
-            "invalid_filepath" : "Error: No file found at `" + data1 + "`",
-            "invalid_area" : "Error: Invalid restoration area `" + data1 + "`"
+            "invalid_filepath": "Error: No file found at `" + data1 + "`",
+            "invalid_area": "Error: Invalid restoration area `" + data1 + "`",
+            "descr": structure_whitespace("  --read-xml", cmdFlgLen, " ", True) + " : Read or save XML configuration from Diagnostics > Backup & Restore",
         },
         # Error/success messages for --replicate-xml flag
-        "--replicate-xml" : {
-            2 : "Error: Unexpected error pulling XML configuration from master `" + server + "`",
+        "--replicate-xml": {
+            2: "Error: Unexpected error pulling XML configuration from master `" + server + "`",
             3: globalAuthErrMsg,
             6: globalPlatformErrMsg,
             10: globalDnsRebindMsg,
             15: globalPermissionErrMsg,
-            "invalid_area" : "Error: Invalid restoration area `" + data1 + "`",
-            "invalid_targets" : "Error: Invalid target string `" + data1 + "`"
+            "invalid_area": "Error: Invalid restoration area `" + data1 + "`",
+            "invalid_targets": "Error: Invalid target string `" + data1 + "`",
+            "descr": structure_whitespace("  --replicate-xml", cmdFlgLen, " ", True) + " : Copy an XML area from one pfSense server to another",
         },
-        # Error/success messages for --add-tunable flag
-        "--add-tunable" : {
-            0 : "Successfully added tunable `" + data1 + "` to `" + server + "`",
-            2 : "Error: Unexpected error adding system tunable",
-            3 : globalAuthErrMsg,
-            6 : globalPlatformErrMsg,
-            8 : "Error: Tunable `" + data1 + "` already exists",
-            10 : globalDnsRebindMsg,
-            15 : globalPermissionErrMsg
-        },
-        # Error/success messages for --read-tunables flag
-        "--read-tunables": {
-            2: "Error: Unexpected error reading system tunables",
+        # Error/success messages for --read-interfaces flag
+        "--read-interfaces": {
+            2: "Error: Unexpected error reading interface configuration",
             3: globalAuthErrMsg,
             6: globalPlatformErrMsg,
             10: globalDnsRebindMsg,
             15: globalPermissionErrMsg,
             "invalid_filter": "Error: Invalid filter `" + data1 + "`",
             "export_err": "Error: export directory `" + data1 + "` does not exist",
-            "export_success": "Successfully exported tunable data to " + data1,
-            "export_fail": "Failed to export tunable data as JSON"
-        },
-        # Error/success messages for --read-interfaces flag
-        "--read-interfaces" : {
-            2 : "Error: Unexpected error reading interface configuration",
-            3 : globalAuthErrMsg,
-            6 : globalPlatformErrMsg,
-            10 : globalDnsRebindMsg,
-            15: globalPermissionErrMsg,
-            "invalid_filter" : "Error: Invalid filter `" + data1 + "`",
-            "export_err" : "Error: export directory `" + data1 + "` does not exist",
-            "export_success" : "Successfully exported interface data to " + data1,
-            "export_fail" : "Failed to export interface data as JSON"
+            "export_success": "Successfully exported interface data to " + data1,
+            "export_fail": "Failed to export interface data as JSON",
+            "descr": structure_whitespace("  --read-interfaces", cmdFlgLen, " ", True) + " : Read configured interfaces from Interfaces > Assignments",
         },
         # Error/success messages for --read-available-interfaces flag
-        "--read-available-interfaces" : {
-            2 : "Error: Unexpected error reading interface configuration",
-            3 : globalAuthErrMsg,
-            6 : globalPlatformErrMsg,
-            10 : globalDnsRebindMsg,
+        "--read-available-interfaces": {
+            2: "Error: Unexpected error reading interface configuration",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
             15: globalPermissionErrMsg,
-            "no_if" : "No interfaces available on `" + server + "`"
+            "no_if": "No interfaces available on `" + server + "`",
+            "descr": structure_whitespace("  --read-available-interfaces", cmdFlgLen, " ", True) + " : Read interfaces that are available but not configured",
         },
         # Error/success messages for --read-vlans flag
-        "--read-vlans" : {
-            2 : "Error: Unexpected error reading VLAN configuration. You may not have any VLANs configured",
+        "--read-vlans": {
+            2: "Error: Unexpected error reading VLAN configuration. You may not have any VLANs configured",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err": "Error: export directory `" + data1 + "` does not exist",
+            "export_success": "Successfully exported VLAN data to " + data1,
+            "export_fail": "Failed to export VLAN data as JSON",
+            "descr": structure_whitespace("  --read-vlans", cmdFlgLen, " ", True) + " : Read configured VLAN from Interfaces > VLANs",
+        },
+        # Error/success messages for --add-vlan flag
+        "--add-vlan" : {
+            0 : "Successfully added VLAN `" + data1 + "` on `" + data2 + "`",
+            1 : "Error: No usable interfaces were detected",
+            2 : "Error: Unexpected error adding VLAN `" + data1 + "` on `" + data2 + "`",
             3 : globalAuthErrMsg,
             6 : globalPlatformErrMsg,
+            7 : "Error: Interface `" + data2 + "` does not exist",
+            8 : "Error: VLAN `" + data1 + "` already exists on interface `" + data2 + "`",
             10 : globalDnsRebindMsg,
+            15 : globalPermissionErrMsg,
+            "invalid_vlan" : "Error: VLAN `" + data1 + "` out of range. Expected 1-4094",
+            "invalid_priority" : "Error: VLAN priority `" + data1 + "` out of range. Expected 0-7",
+            "descr": structure_whitespace("  --add-vlans", cmdFlgLen, " ", True) + " : Add a new VLAN to an existing interface",
+        },
+        # Error/success messages for --read-dns
+        "--read-dns": {
+            0: True,
+            2: "Error: Unexpected error reading DNS Resolver configuration",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
             15: globalPermissionErrMsg,
-            "invalid_filter" : "Error: Invalid filter `" + data1 + "`",
-            "export_err" : "Error: export directory `" + data1 + "` does not exist",
-            "export_success" : "Successfully exported VLAN data to " + data1,
-            "export_fail" : "Failed to export VLAN data as JSON"
+            "invalid_syntax": "Error: Invalid arguments. Expected syntax: `pfsense-controller <SERVER> --read-dns <FILTER>`",
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err": "Error: export directory `" + data1 + "` does not exist",
+            "export_success": "Successfully exported DNS Resolver data to " + data1,
+            "export_fail": "Failed to export DNS Resolver data as JSON",
+            "descr": structure_whitespace("  --read-dns", cmdFlgLen, " ", True) + " : Read DNS resolver entries from Services > DNS Resolvers",
         },
         # Error/success messages for --add-dns flag
         "--add-dns" : {
@@ -308,50 +422,8 @@ def get_exit_message(ec, server, command, data1, data2):
             10 : globalDnsRebindMsg,
             15: globalPermissionErrMsg,
             "invalid_ip" : "Error: Invalid IP address",
-            "invalid_syntax" : "Error: Invalid arguments. Expected syntax: `pfsense-controller <SERVER> --add-dns <HOST> <DOMAIN> <IP> <DESCR>`"
-        },
-        # Error/success messages for --read-dns
-        "--read-dns" : {
-            0 : True,
-            2 : "Error: Unexpected error reading DNS Resolver configuration",
-            3 : globalAuthErrMsg,
-            6 : globalPlatformErrMsg,
-            10 : globalDnsRebindMsg,
-            15: globalPermissionErrMsg,
-            "invalid_syntax" : "Error: Invalid arguments. Expected syntax: `pfsense-controller <SERVER> --read-dns <FILTER>`",
-            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
-            "export_err" : "Error: export directory `" + data1 + "` does not exist",
-            "export_success" : "Successfully exported DNS Resolver data to " + data1,
-            "export_fail" : "Failed to export DNS Resolver data as JSON"
-        },
-        # Error/success messages for --add-sslcert flag
-        "--add-sslcert" : {
-            0 : "SSL certificate successfully uploaded",
-            2 : "Error: Failed to upload SSL certificate",
-            3 : globalAuthErrMsg,
-            6: globalPlatformErrMsg,
-            10 : globalDnsRebindMsg,
-            15: globalPermissionErrMsg,
-            "no_cert" : "Error: No certificate file found at `" + data1 + "`",
-            "no_key" : "Error: No key file found at `" + data1 + "`",
-            "empty" : "Error: Certificate or key file is empty"
-        },
-        # Error/success messages for --read-sslcerts flag
-        "--read-sslcerts" : {
-            2 : "Error: Unexpected error reading SSL certificates",
-            3 : globalAuthErrMsg,
-            6 : globalPlatformErrMsg,
-            10 : globalDnsRebindMsg,
-            15: globalPermissionErrMsg,
-            "read_err" : "Error: failed to read SSL certificates from pfSense. You may not have any certificates installed",
-            "export_err" : "Error: export directory `" + data1 + "` does not exist",
-            "export_success" : "Successfully exported SSL certificate data to " + data1,
-            "export_fail" : "Failed to export SSL certificate data as JSON"
-        },
-        # Error/success messages for --check-auth flag
-        "--check-auth" : {
-            "success" : "Authentication successful",
-            "fail" : "Error: Authentication failed"
+            "invalid_syntax" : "Error: Invalid arguments. Expected syntax: `pfsense-controller <SERVER> --add-dns <HOST> <DOMAIN> <IP> <DESCR>`",
+            "descr": structure_whitespace("  --add-dns", cmdFlgLen, " ", True) + " : Add a new DNS host override to DNS Resolver",
         },
         # Error/success messages for --read-aliases
         "--read-aliases" : {
@@ -363,7 +435,8 @@ def get_exit_message(ec, server, command, data1, data2):
             "read_err" : "Error: failed to read Firewall Aliases from pfSense. You may not have any Firewall Aliases configured",
             "export_err" : "Error: export directory `" + data1 + "` does not exist",
             "export_success" : "Successfully exported Firewall Alias data to " + data1,
-            "export_fail" : "Failed to export Firewall Alias data as JSON"
+            "export_fail" : "Failed to export Firewall Alias data as JSON",
+            "descr": structure_whitespace("  --read-aliases", cmdFlgLen, " ", True) + " : Read configured firewall aliases from Firewall > Aliases",
         },
         # Error/success messages for --modify-alias
         "--modify-alias" : {
@@ -375,15 +448,38 @@ def get_exit_message(ec, server, command, data1, data2):
             6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
             15: globalPermissionErrMsg,
-            "invalid_syntax" : "Error: Invalid syntax - `pfsense-automator <pfSense IP or FQDN> --modify-alias <alias name> <alias values>`"
+            "invalid_syntax" : "Error: Invalid syntax - `pfsense-automator <pfSense IP or FQDN> --modify-alias <alias name> <alias values>`",
+            "descr": structure_whitespace("  --modify-alias", cmdFlgLen, " ", True) + " : Modify an existing firewall alias",
         },
-        # Error/success messages for --check-version
-        "--check-version" : {
-            2 : "Error: Could not determine pfSense version",
-            3 : globalAuthErrMsg,
-            6 : globalPlatformErrMsg,
-            10 : globalDnsRebindMsg,
-            15: globalPermissionErrMsg
+        # Error/success messages for --read-virtual-ip
+        "--read-virtual-ips": {
+            2: "Error: Unknown error gathering virtual IP data",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err": "Error: export directory `" + data1 + "` does not exist",
+            "export_success": "Successfully exported Virtual IP data to " + data1,
+            "export_fail": "Failed to export Virtual IP data as JSON",
+            "descr": structure_whitespace("  --read-virtual-ips", cmdFlgLen, " ", True) + " : Read configured virtual IPs from Firewall > Virtual IPs",
+        },
+        # Error/success messages for --add-virtual-ip
+        "--add-virtual-ip": {
+            0: "Successfully added virtual IP `" + data1 + "`",
+            2: "Error: Unexpected error adding virtual IP. It may conflict with an existing IP",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_mode": "Error: Unknown virtual IP type `" + data1 + "`. Expected `ipalias`, `carp`, `proxyarp` or `other`",
+            "invalid_iface": "Error: Interface `" + data1 + "` does not exist",
+            "invalid_subnet": "Error: Invalid subnet CIDR `" + data1 + "`",
+            "invalid_expand": "Error: Unknown IP expansion option `" + data1 + "`. Expected `yes` or `no`",
+            "invalid_adv": "Error: Invalid advertisements - BASE: `" + data1 + "` SKEW: `" + data2 + "`. Expected value 0-254",
+            "invalid_vhid": "Error: Invalid VHID `" + data1 + "`. Expected value 1-255",
+            "vhid_exists": "Error: VHID `" + data1 + "` already exists on interface `" + data2 + "`",
+            "descr": structure_whitespace("  --add-virtual-ip", cmdFlgLen, " ", True) + " : Configure a new virtual IP",
         },
         # Error/success messages for --read-hasync
         "--read-hasync" : {
@@ -395,7 +491,8 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_filter": "Error: Invalid filter `" + data1 + "`",
             "export_err" : "Error: export directory `" + data1 + "` does not exist",
             "export_success" : "Successfully exported HA Sync data to " + data1,
-            "export_fail" : "Failed to export HA Sync data as JSON"
+            "export_fail" : "Failed to export HA Sync data as JSON",
+            "descr": structure_whitespace("  --read-hasync", cmdFlgLen, " ", True) + " : Read HA sync configuration from System > HA Sync",
         },
         # Error/success messages for --read-carp-status
         "--read-carp-status" : {
@@ -407,7 +504,8 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_filter": "Error: Invalid filter `" + data1 + "`",
             "export_err" : "Error: export directory `" + data1 + "` does not exist",
             "export_success" : "Successfully exported CARP data to " + data1,
-            "export_fail" : "Failed to export CARP data as JSON"
+            "export_fail" : "Failed to export CARP data as JSON",
+            "descr": structure_whitespace("  --read-carp-status", cmdFlgLen, " ", True) + " : Read the current CARP failover status from Status > CARP",
         },
         # Error/success messages for --set-carp-maintenance
         "--set-carp-maintenance" : {
@@ -418,75 +516,12 @@ def get_exit_message(ec, server, command, data1, data2):
             6 : globalPlatformErrMsg,
             10 : globalDnsRebindMsg,
             15: globalPermissionErrMsg,
-            "invalid_toggle" : "Error: Invalid toggle `" + data1 + "`. Expected `enable` or `disable`"
-        },
-        # Error/success messages for --read-virtual-ip
-        "--read-virtual-ips" : {
-            2 : "Error: Unknown error gathering virtual IP data",
-            3 : globalAuthErrMsg,
-            6 : globalPlatformErrMsg,
-            10 : globalDnsRebindMsg,
-            15: globalPermissionErrMsg,
-            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
-            "export_err" : "Error: export directory `" + data1 + "` does not exist",
-            "export_success" : "Successfully exported Virtual IP data to " + data1,
-            "export_fail" : "Failed to export Virtual IP data as JSON"
-        },
-        # Error/success messages for --add-virtual-ip
-        "--add-virtual-ip" : {
-            0 : "Successfully added virtual IP `" + data1 + "`",
-            2 : "Error: Unexpected error adding virtual IP. It may conflict with an existing IP",
-            3 : globalAuthErrMsg,
-            6 : globalPlatformErrMsg,
-            10 : globalDnsRebindMsg,
-            15: globalPermissionErrMsg,
-            "invalid_mode": "Error: Unknown virtual IP type `" + data1 + "`. Expected `ipalias`, `carp`, `proxyarp` or `other`",
-            "invalid_iface" : "Error: Interface `" + data1 + "` does not exist",
-            "invalid_subnet" : "Error: Invalid subnet CIDR `" + data1 + "`",
-            "invalid_expand" : "Error: Unknown IP expansion option `" + data1 + "`. Expected `yes` or `no`",
-            "invalid_adv" : "Error: Invalid advertisements - BASE: `" + data1 + "` SKEW: `"+ data2 + "`. Expected value 0-254",
-            "invalid_vhid" : "Error: Invalid VHID `" + data1 + "`. Expected value 1-255",
-            "vhid_exists" : "Error: VHID `" + data1 + "` already exists on interface `" + data2 + "`"
-        },
-        # Error/success messages for --set-wc-sslcert
-        "--set-wc-sslcert" : {
-            0 : "Successfully changed WebConfigurator SSL certificate to `" + data1 + "`",
-            1 : "Error: SSL certificate `" + data1 + "` is already in use",
-            2 : "Error: Failed setting SSL certificate `" + data1 + "`",
-            3 : globalAuthErrMsg,
-            4 : "Error: SSL certificate `" + data1 + "` matches multiple certificates",
-            5 : "Error: Certificate `" + data1 + "` not found",
-            6 : globalPlatformErrMsg,
-            10 : globalDnsRebindMsg,
-            15: globalPermissionErrMsg,
-            "unknown_err" : "Error: An unknown error has occurred"
-        },
-        # Error/success messages for -add-ldapserver
-        "--add-ldapserver" : {
-            0 : "Successfully added LDAP server `" + data1 + "` on `" + server + "`",
-            2 : "Error: Failed to configure LDAP server",
-            3 : globalAuthErrMsg,
-            6 : globalPlatformErrMsg,
-            10 : globalDnsRebindMsg,
-            15: globalPermissionErrMsg,
-            "invalid_userAlt" : "Error: Invalid username alteration value `" + data1 + "`. Expected yes or no",
-            "invalid_encode" : "Error: Invalid encode value `" + data1 + "`. Expected yes or no",
-            "invalid_rfc2307": "Error: Invalid RFC2307 value `" + data1 + "`. Expected yes or no",
-            "invalid_ldapTemplate": "Error: Invalid LDAP template value `" + data1 + "`",
-            "invalid_bindAnon" : "Error: Invalid bind anonymous value `" + data1 + "`. Expected yes or no",
-            "invalid_extQuery": "Error: Invalid extended query value `" + data1 + "`. Expected yes or no",
-            "invalid_searchScope": "Error: Invalid search scope value `" + data1 + "`",
-            "invalid_timeout_range": "Error: server timeout value `" + data1 + "` out of range. Expected 1-9999999999",
-            "invalid_timeout": "Error: Invalid timeout value `" + data1 + "`",
-            "invalid_protocol": "Error: Invalid LDAP version value `" + data1 + "`. Expected 2 or 3",
-            "invalid_transport": "Error: Unknown transport type `" + data1 + "`",
-            "invalid_port" : "Error: Invalid LDAP port value `" + data1 + "`",
-            "invalid_portrange" : "Error: LDAP port `" + data1 + "` out of range. Expected 1-65535",
-            "missing_args" : "Error: missing arguments"
+            "invalid_toggle" : "Error: Invalid toggle `" + data1 + "`. Expected `enable` or `disable`",
+            "descr": structure_whitespace("  --set-carp-maintenance", cmdFlgLen, " ", True) + " : Enable CARP maintenance mode",
         }
     }
-    # Pull the requested message
-    exitMessage = ecd[command][ec]
+    # Pull the requested message, return entire dictionary if "all" command is passed, otherwise just return the single values
+    exitMessage = ecd[command][ec] if command != "all" else ecd
     # Return our message
     return exitMessage
 
@@ -3024,6 +3059,7 @@ def set_carp_maintenance(server, user, key, enable):
 # set_carp() either enables or disables CARP temporarily
 
 # main() is the primary function that maps arguments to other functions
+# noinspection SyntaxError
 def main():
     # Local Variables
     global wcProtocol    # Make wcProtocol modifiable globally
@@ -3094,9 +3130,6 @@ def main():
                     descrHead = structure_whitespace("DESCRIPTION", 30, "-", True) + " "    # Format the table header description column
                     # If our DNS configuration is empty
                     if dnsConfig["ec"] == 0:
-                        # If user wants to read the data as JSON
-                        if dnsFilter.startswith("-rj=") or dnsFilter.startswith("--read-json="):
-                            print()
                         # If user wants to export the data as JSON
                         if dnsFilter.startswith("-j=") or dnsFilter.startswith("--json="):
                             jsonPath = dnsFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
@@ -3115,6 +3148,9 @@ def main():
                             else:
                                 print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
                                 sys.exit(1)
+                        # If user wants to print the JSON output
+                        elif dnsFilter.lower() in ("--read-json", "-rj"):
+                            print(json.dumps(dnsConfig["domains"]))   # Print our JSON data
                         # If user wants to print all items
                         elif dnsFilter.upper() in ("--ALL","-A") or dnsFilter.upper() in ("DEFAULT", "-D") or dnsFilter.startswith(("--host=","-h=")):
                             # Format and print our header
@@ -3194,6 +3230,7 @@ def main():
                             print(structure_whitespace("Username:",20," ",True) + userData["users"][userExp]["username"])    # Print username
                             print(structure_whitespace("Full name:",20," ",True) + userData["users"][userExp]["full_name"])   # Print our user full name
                             print(structure_whitespace("ID:",20," ",True) + userData["users"][userExp]["id"])   # Print our user id
+                            # noinspection SyntaxError
                             print(structure_whitespace("Enabled:",20," ",True) + "Yes") if userData["users"][userExp]["disabled"] != "yes" else print(structure_whitespace("Enabled:",20," ",True) + "No")  # Print our enabled value
                             print(structure_whitespace("Created-by:",20," ",True) + userData["users"][userExp]["type"])   # Print our user type
                             print(structure_whitespace("Expiration:",20," ",True) + userData["users"][userExp]["expiration"]) if userData["users"][userExp]["expiration"] != "" else None  # Print our expiration date
@@ -3222,6 +3259,9 @@ def main():
                             loopPv = structure_whitespace(d["privileges"]["level"],10," ", True) + " "
                             loopGp = structure_whitespace(''.join([str(v) + ", " for v in d["groups"]]).rstrip(", "),30," ", True) + " "
                             print(loopId + loopUs + loopFn + loopEn + loopPv + loopGp)
+                    # If user wants to print the JSON output
+                    elif userFilter.lower() in ("--read-json", "-rj"):
+                        print(json.dumps(userData["users"]))   # Print our JSON data
                     # If we want to export values as JSON
                     elif userFilter.startswith(("--json=", "-j=")):
                         jsonPath = userFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
@@ -3504,6 +3544,9 @@ def main():
                                 print("      value: " + entryValue["value"])
                                 print("      subnet: " + entryValue["subnet"]) if entryValue["subnet"] != "0" else None
                                 print("      description: \"" + entryValue["descr"] + "\"")
+                    # If user wants to print the JSON output
+                    elif aliasFilter.lower() in ("--read-json", "-rj"):
+                        print(json.dumps(getAliasData["aliases"]))   # Print our JSON data
                     # Check if JSON mode was selected
                     elif aliasFilter.startswith("-j=") or aliasFilter.startswith("--json="):
                         jsonPath = aliasFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
@@ -3594,6 +3637,10 @@ def main():
                             # Check that our interface matches our interface expression
                             if subnet.startswith(subnetExp):
                                 print(id + subnet + type + iface + descr)    # Print our data values
+                        # If user wants to print the JSON output
+                        elif vipFilter.lower() in ("--read-json", "-rj"):
+                            print(json.dumps(vipTable["virtual_ips"]))   # Print our JSON data
+                            break
                         # If we want to export values as JSON
                         elif vipFilter.startswith(("--json=", "-j=")):
                             jsonPath = vipFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
@@ -3787,6 +3834,9 @@ def main():
                             else:
                                 print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
                                 sys.exit(1)
+                        # If user wants to print the JSON output
+                        elif verbosity.lower() in ("--read-json", "-rj"):
+                            print(json.dumps(getCertData["certs"]))   # Print our JSON data
                         # If JSON mode was not selected
                         else:
                             # Format header values
@@ -3944,6 +3994,10 @@ def main():
                                 if data["vhid"] == vhidExp:
                                     print(header) if counter == 0 else None  # Print our header
                                     print(carpData)    # Print our dataset
+                            # If user wants to print the JSON output
+                            elif carpFilter.lower() in ("--read-json", "-rj"):
+                                print(json.dumps(carpStatus["carp"]))   # Print our JSON data
+                                break
                             # If we want to export values as JSON
                             elif carpFilter.startswith(("--json=", "-j=")):
                                 jsonPath = carpFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
@@ -4077,6 +4131,10 @@ def main():
                             # Check that our interface matches our link type expression
                             if value["type"].startswith(vendorExp):
                                 print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
+                        # If user wants to print the JSON output
+                        elif arpFilter.lower() in ("--read-json", "-rj"):
+                            print(json.dumps(arpTable["arp"]))   # Print our JSON data
+                            break
                         # If we want to export values as JSON
                         elif arpFilter.startswith(("--json=", "-j=")):
                             jsonPath = arpFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
@@ -4146,6 +4204,9 @@ def main():
                     # Check if we need to print our XMLRPC data
                     elif haFilter.lower() in ["--xmlrpc","-x"]:
                         print(xmlrpcData)    # Print our XMLRPC data
+                    # If user wants to print the JSON output
+                    elif haFilter.lower() in ("--read-json", "-rj"):
+                        print(json.dumps(haSyncData["ha_sync"]))   # Print our JSON data
                     # If we want to export values as JSON
                     elif haFilter.startswith(("--json=", "-j=")):
                         jsonPath = haFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
@@ -4376,7 +4437,7 @@ def main():
                 ifaceFilter = thirdArg if len(sys.argv) > 3 else "--all"   # Assign a filter argument that we can use to change the returned output
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
-                supportedFilters = ("--all", "-a", "-d", "default", "-i=","--iface=","-v=","--vlan=","-n=", "--name=", "-c=", "--cidr=", "-j", "--json")    # Tuple of support filter arguments
+                supportedFilters = ("--all", "-a", "-d", "default", "-i=","--iface=","-v=","--vlan=","-n=", "--name=", "-c=", "--cidr=", "-j", "--json", "-rj", "--read-json")    # Tuple of support filter arguments
                 maxWidth = 200   # Assign the max width needed for our data table
                 tWidth = get_terminal_width()   # Get our terminal width and determine if we need to scale content
                 scaleCalc = tWidth/maxWidth    # Calculate our scale percentage
@@ -4406,6 +4467,9 @@ def main():
                             else:
                                 print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
                                 sys.exit(1)
+                        # If user wants to print the JSON output
+                        elif ifaceFilter.lower() in ("--read-json", "-rj"):
+                            print(json.dumps(ifaceData["ifaces"]))   # Print our JSON data
                         # If user is not requesting JSON, print normally
                         else:
                             # Format our header values
@@ -4542,6 +4606,10 @@ def main():
                         if tunableFilter.upper() in ["-A", "--ALL", "-D", "DEFAULT"]:
                             print(header) if counter == 1 else None  # Print our header if we are just starting loop
                             print(tunNumber + tunName + tunDescr + tunValue + tunId)    # Print our data values
+                        # If user wants to print the JSON output
+                        elif tunableFilter.lower() in ("--read-json", "-rj"):
+                            print(json.dumps(tunables["tunables"]))   # Print our JSON data
+                            break
                         # If we want to export values as JSON
                         elif tunableFilter.startswith(("--json=", "-j=")):
                             jsonPath = tunableFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
@@ -4627,6 +4695,9 @@ def main():
                         print(structure_whitespace("Login Page Color: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["logincss"]))
                         print(structure_whitespace("Login hostname: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["loginshowhost"]))
                         print(structure_whitespace("Dashboard refresh: ", 25, " ", False) + str(generalSetupData["general"]["webconfigurator"]["dashboardperiod"]))
+                    # If user wants to print the JSON output
+                    if generalFilter.lower() in ("--read-json", "-rj"):
+                        print(json.dumps(generalSetupData["general"]))   # Print our JSON data
                     # If we want to export values as JSON
                     if generalFilter.startswith(("--json=", "-j=")):
                         jsonPath = generalFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
@@ -4727,6 +4798,9 @@ def main():
                         # Print all our advanced admin CONSOLE OPTIONS
                         print(structure_whitespace("--CONSOLE OPTIONS", 50, "-", False))
                         print(structure_whitespace("Password Protect Console: ", 30, " ", False) + str(advAdmData["adv_admin"]["console_options"]["disableconsolemenu"]))
+                    # If user wants to print the JSON output
+                    if advAdmFilter.lower() in ("--read-json", "-rj"):
+                        print(json.dumps(advAdmData["adv_admin"]))   # Print our JSON data
                     # If we want to export values as JSON
                     if advAdmFilter.startswith(("--json=", "-j=")):
                         jsonPath = advAdmFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
@@ -4975,6 +5049,10 @@ def main():
                             # Check if we have found our expected VLAN
                             if interfaceScope == value["interface"]:
                                 print(id + interface + vlanId + priority + descr)    # Print our data values
+                        # If user wants to print the JSON output
+                        elif vlanFilter.lower() in ("--read-json", "-rj"):
+                            print(json.dumps(vlans["vlans"]))   # Print our JSON data
+                            break    # Break our loop, we only want to print this once
                         # If we want to export values as JSON
                         elif vlanFilter.startswith(("--json=", "-j=")):
                             jsonPath = vlanFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
@@ -5005,6 +5083,15 @@ def main():
                     sys.exit(vlans["ec"])
             # If an unexpected action was given, return error
             else:
+                flagDescrs = ""    # Initialize our flag description help string
+                flagDict = get_exit_message("",pfsenseServer,"all","","")    # Pull our descr dictionary
+                # Loop through our flag descriptions and save them to a string
+                for key,value in flagDict.items():
+                    # Only perform this on dict keys with -- flags
+                    if key.startswith("--"):
+                        flagDescrs = flagDescrs + value["descr"] + "\n"   # Format our return string
+                print("COMMANDS:")
+                print(flagDescrs.rstrip("/"))
                 print(get_exit_message("invalid_arg", pfsenseServer, "generic", pfsenseAction, ""))
                 sys.exit(1)
         # If we couldn't connect to pfSense's web configurator, return error

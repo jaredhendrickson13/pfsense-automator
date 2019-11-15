@@ -55,6 +55,7 @@ Commands
         - `--vlan=<vlan_id>` (`-v`) : Return only interfaces that are associated with a specific VLAN tag (e.g. `--vlan=50`) 
         - `--name=<name_expr>` (`-n`) : Return only interfaces whose description contains a specified expression (e.g. `--name=FWUPLINK`) 
         - `--cidr=<cidr_expr>` (`-c`) : Return only interfaces whose CIDR starts with a specified expression (e.g. `--cidr=127.0.0.1`) 
+        - `--read-json` (`-rf`) : Prints interface data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports interface data to a JSON file given an existing directory
         
 -  `--read-available-interfaces` : Prints interfaces that are available but unused by pfSense
@@ -74,6 +75,7 @@ Commands
         - `--all` (`-a`) : Return all available VLAN values 
         - `--vlan=<vlan_id>` : Return only one entry given a valid VLAN ID
         - `--iface=<iface_id>` (`-i`) : Return only VLANs configured on a specific interface 
+        - `--read-json` (`-rf`) : Prints VLAN data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports VLAN data to a JSON file given an existing directory
 
 - `--read-general-setup` : Reads current General Setup settings from /system.php
@@ -84,6 +86,7 @@ Commands
         - `--dns` (`-n`) : Return only configuration from the DNS section of /system.php
         - `--localization` (`-l`) : Return only configuration from the Localization section of /system.php
         - `--webconfigurator` (`-wc`) : Return only configuration from the webConfigurator section of /system.php
+        - `--read-json` (`-rf`) : Prints General Setup data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports General Setup data to a JSON file given an existing directory
 
 - `--set-system-hostname` : Sets pfSense's system hostname values. _Note: proceed with caution if you have __DNS rebind checks enabled__! Either use the IP address to connect, or ensure that pfSense is able to resolve the new system hostname back to it's own IP address before changing the hostname_
@@ -101,6 +104,7 @@ Commands
         - `--login-protection` (`-lp`) : Return only configuration from the Login Protection section of /system_advanced_admin.php
         - `--serial-communications` (`-sc`) : Return only configuration from the Serial Communications section of /system_advanced_admin.php
         - `--console-options` (`-co`) : Return only configuration from the Console options section of /system_advanced_admin.php
+        - `--read-json` (`-rf`) : Prints Advanced Admin data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports Advanced Admin data to a JSON file given an existing directory
 
 - `--read-hasync` : Gathers the current High Availability configuration from system_hasync.php and prints it to your command line or exports as JSON
@@ -109,6 +113,7 @@ Commands
         - `--all` (`-a`) : Returns all available HA Sync configurations
         - `--pfsync` (`-p`) : Returns only PFSYNC configuration
         - `--xmlrpc` (`-x`) : Returns only XMLRPC configuration
+        - `--read-json` (`-rf`) : Prints HA Sync data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports HA Sync data to a JSON file given an existing directory    
 
 - `--read-users`: Reads current local user database
@@ -116,6 +121,7 @@ Commands
     - **Arguments**:
         - `--all` (`-a`,`-d`,`default`) : Return all users
         - `--username` (`-un`) : Return only configuration for a single user (e.g. `--username=admin`)
+        - `--read-json` (`-rf`) : Prints user data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports user data to a JSON file given an existing directory
 
 - `--setup-wc` : Configures pfSense webConfigurator's advanced options. This excludes the webConfigurator protocol and port number as they cannot be changed statefully. See `--set-wc-port` below. 
@@ -207,6 +213,7 @@ Commands
         - `--mac` (`-m`) : Return only ARP entries with a specific MAC (e.g. `--mac=00:00:00:00:00:00`)
         - `--vendor` (`-v`) : Return only ARP entries with a specific MAC vendor (e.g. `--vendor=Apple`)
         - `--link` (`-l`) : Return only ARP entries with a specific link type(e.g. `--link=ethernet`)
+        - `--read-json` (`-rf`) : Prints ARP data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports ARP data to a JSON file given an existing directory
 
 - `--read-xml` : Reads or exports XML configuration
@@ -293,6 +300,7 @@ Commands
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-tunables <argument>`
     - **Arguments**:
         - `--all` (`-a`, `-d`, `default`) : Return all available ARP table values 
+        - `--read-json` (`-rf`) : Prints tunable data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports system tunables data to a JSON file given an existing directory
         
 - `--add-dns` : Attempts to add a DNS entry to Unbound (DNS Resolver). This will not overwrite existing DNS entries
@@ -310,7 +318,8 @@ Commands
         - `--all` (`-a`) : Return all available DNS values including aliases
         - `--default` (`-d`) : Return only base entries, no aliases are included
         - `--host=<FQDN>` (beta) : Return only one entry given exact FQDN. If an alias matches the FQDN, the parent entry is printed             
-        - `--json=<directory_path>` : Exports SSL certificate data to a JSON file given an existing directory
+        - `--read-json` (`-rf`) : Prints DNS Resolver data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
+        - `--json=<directory_path>` : Exports Resolver data to a JSON file given an existing directory
 
 - `--add-sslcert` : Attempts to add a new external certificate to pfSense's Certificate Manager
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-sslcert <cert_file_path> <key_file_path> <cert_name>`
@@ -325,6 +334,7 @@ Commands
         - `<verbosity>`
             - `--verbose` : Includes all details about the certificates
             - `default` : Includes base info
+            - `--read-json` (`-rf`) : Prints SSL certificate data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
             - `--json=<directory_path>` : Exports SSL certificate data to a JSON file given an existing directory
 
 - `--set-wc-sslcert` : Sets the SSL certificate that the WebConfigurator will use
@@ -337,6 +347,7 @@ Commands
     - **Arguments**:
         - `--all` (`-a`) : Return all available alias values in a YAML like format
         - `--name=<alias_name>` (`-n`) : Return only one alias given a valid alias name
+        - `--read-json` (`-rf`) : Prints alias data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports alias data to a JSON file given an existing directory
 
 - `--read-virtual-ips` : Reads our configured virtual IPs from firewall_virtual_ip.php
@@ -346,6 +357,7 @@ Commands
         - `--type` (`-t`) : Return only a specified type of virtual IPs (e.g. `--type=proxyarp`)
         - `--iface` (`-i`) : Return only virtual IPs configured on a specific interface (e.g. `--iface=wan`) _Note: this uses the pf interface ID not the user configured ID_
         - `--subnet` (`-s`) : Return virtual IPs matching a subnet expression (e.g. `--subnet=127.0.0.1/32`) _Note: this filter matches entries that start with your expression, the more specific your expression the more specific your results will be_
+        - `--read-json` (`-rf`) : Prints virtual IP data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports virtual IP data to a JSON file given an existing directory
 
 - `--add-virtual-ip` : Adds a new virtual IP to firewall_virtual_ip.php
@@ -367,6 +379,7 @@ Commands
         - `--nodes` (`-n`) : Return only pfSync node IDs
         - `--iface` (`-i`) : Return only virtual IPs configured on a specific interface (e.g. `--iface=wan`) _Note: this uses the pf interface ID not the user configured ID_
         - `--subnet` (`-s`) : Return virtual IPs matching a subnet expression (e.g. `--subnet=127.0.0.1/32`) _Note: this filter matches entries that start with your expression, the more specific your expression the more specific your results will be_
+        - `--read-json` (`-rf`) : Prints CARP status data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports virtual IP data to a JSON file given an existing directory
 
 - `--set-carp-maintenance`: Enables or disables CARP persistent maintenance mode. _Note: Enabling maintenance mode on the MASTER node is not recommended, command timeouts are likely to occur if you are enabling maintenance on the MASTER node_
