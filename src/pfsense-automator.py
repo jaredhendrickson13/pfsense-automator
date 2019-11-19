@@ -8,7 +8,6 @@
 # ----------------------------------------------------------------------------------------------------------------
 # IMPORT MODULES
 import datetime
-import fcntl
 import getpass
 import io
 import json
@@ -17,9 +16,7 @@ import platform
 import requests
 import signal
 import socket
-import struct
 import sys
-import termios
 import time
 import urllib3
 
@@ -295,7 +292,7 @@ def get_exit_message(ec, server, command, data1, data2):
         },
         # Error/success messages for --read-arp flag
         "--read-arp": {
-            2: "Error: Unexpected error reading XML configuration",
+            2: "Error: Unexpected error reading ARP configuration",
             3: globalAuthErrMsg,
             6: globalPlatformErrMsg,
             10: globalDnsRebindMsg,
@@ -332,7 +329,7 @@ def get_exit_message(ec, server, command, data1, data2):
             15: globalPermissionErrMsg,
             "invalid_filepath": "Error: No file found at `" + data1 + "`",
             "invalid_area": "Error: Invalid restoration area `" + data1 + "`",
-            "descr": structure_whitespace("  --read-xml", cmdFlgLen, " ", True) + " : Read or save XML configuration from Diagnostics > Backup & Restore",
+            "descr": structure_whitespace("  --upload-xml", cmdFlgLen, " ", True) + " : Restore an existing XML configuration from file",
         },
         # Error/success messages for --replicate-xml flag
         "--replicate-xml": {
@@ -525,12 +522,6 @@ def get_exit_message(ec, server, command, data1, data2):
     # Return our message
     return exitMessage
 
-# get_terminal_width() returns the width the of the terminal window. This can be used to dynamically scale data
-def get_terminal_width():
-     th, tw, hp, wp = struct.unpack('HHHH',
-         fcntl.ioctl(0, termios.TIOCGWINSZ,
-         struct.pack('HHHH', 0, 0, 0, 0)))
-     return tw
 # http_request() uses the requests module to make HTTP POST/GET requests
 def http_request(url, data, headers, files, timeout, method):
     # Local Variables
@@ -3248,7 +3239,7 @@ def main():
                             print(get_exit_message("invalid_user",pfsenseServer,pfsenseAction,userExp,""))    # Print error message
                             sys.exit(1)    # Exit on non-zero
                     # Check if user wants to print all users
-                    if userFilter.lower() in ("--all","-a","default"):
+                    elif userFilter.lower() in ("--all","-a","default"):
                         print(header)    # Print our header
                         # Loop through our users and print their data
                         for u,d in userData["users"].items():
@@ -3681,13 +3672,13 @@ def main():
                 vipPasswd = seventhArg if len(sys.argv) > 7 else None    # If a seventh argument is passed, save it as the vip password
                 vipPasswd = getpass.getpass("Virtual IP Password: ") if vipPasswd is None and vipMode.lower() == "carp" else vipPasswd    # If interactive mode is initiated, prompt user for vip password if mode is carp
                 vipVhid = eighthArg if len(sys.argv) > 8 else None    # If a eighth argument is passed, save it as the vip vhid
-                vipVhid = input("VHID Group [1-255,auto]: ") if vipVhid is None and vipMode.lower() == "carp" else vipVhid    # If interactive mode is initiated, prompt user for vip vhid if mode is carp
+                vipVhid = input("VHID Group [1-255,auto]: ") if vipVhid is None and vipMode.lower() == "carp" else ""    # If interactive mode is initiated, prompt user for vip vhid if mode is carp
                 vipAdvBase = ninthArg if len(sys.argv) > 9 else None    # If a ninth argument is passed, save it as the vip advbase
-                vipAdvBase = input("Advertising Base [1-254,default]: ") if vipAdvBase is None and vipMode.lower() == "carp" else vipAdvBase    # If interactive mode is initiated, prompt user for vip advbase if mode is carp
-                vipAdvBase = 1 if vipAdvBase.lower() == "default" else vipAdvBase    # If user requests default value, assign 1, otherwise retain existing value
+                vipAdvBase = input("Advertising Base [1-254,default]: ") if vipAdvBase is None and vipMode.lower() == "carp" else ""    # If interactive mode is initiated, prompt user for vip advbase if mode is carp
+                vipAdvBase = "1" if vipAdvBase.lower() == "default" else vipAdvBase    # If user requests default value, assign 1, otherwise retain existing value
                 vipAdvSkew = tenthArg if len(sys.argv) > 10 else None    # If a ninth argument is passed, save it as the vip advskew
-                vipAdvSkew = input("Advertising Skew [0-254,default]: ") if vipAdvSkew is None and vipMode.lower() == "carp" else vipAdvSkew    # If interactive mode is initiated, prompt user for vip advskew if mode is carp
-                vipAdvSkew = 0 if vipAdvSkew.lower() == "default" else vipAdvSkew    # If user requests default value, assign 1, otherwise retain existing value
+                vipAdvSkew = input("Advertising Skew [0-254,default]: ") if vipAdvSkew is None and vipMode.lower() == "carp" else ""    # If interactive mode is initiated, prompt user for vip advskew if mode is carp
+                vipAdvSkew = "0" if vipAdvSkew.lower() == "default" else vipAdvSkew    # If user requests default value, assign 1, otherwise retain existing value
                 vipDescr = eleventhArg if len(sys.argv) > 11 else input("Virtual IP Description: ")    # Get user input for description
                 user = thirteenthArg if twelfthArg == "-u" and thirteenthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = fifteenthArg if fourteenthArg == "-p" and fifteenthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
@@ -3734,7 +3725,7 @@ def main():
                                                 # Check our vhid input
                                                 vhidValid = False    # Assign a bool to track if our VHID input is valid
                                                 # Check if our input is "auto"
-                                                if vipVhid == "auto" or vipVhid is None:
+                                                if vipVhid == "auto" or vipVhid is "":
                                                     vhidValid = True  # Our value is valid
                                                 # Check that our values are valid
                                                 elif vipVhid.isdigit():
@@ -3755,7 +3746,7 @@ def main():
                                                 if vhidValid:
                                                     vipAdvValid = False    # Assign a bool to track if our advertisements are valid
                                                     # Check if our input is None
-                                                    if vipAdvBase is None and vipAdvSkew is None:
+                                                    if vipAdvBase is "" and vipAdvSkew is "":
                                                         vipAdvValid = True  # Our input is valid
                                                     # Check if our VHID base and skew advertisements are valid
                                                     elif vipAdvBase.isdigit() and vipAdvSkew.isdigit():
@@ -4057,18 +4048,13 @@ def main():
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
                 arpTable = get_arp_table(pfsenseServer, user, key)
-                maxWidth = 110   # Assign the max width of our data table
-                tWidth = get_terminal_width()   # Get our terminal width and determine if we need to scale content
-                scaleCalc = tWidth/maxWidth    # Calculate our scale percentage
-                scaleFactor = 1 if tWidth <= maxWidth else scaleCalc    # Determine if we need to scale our content outward
-                scaleFactor = scaleCalc if 1 > scaleCalc >= 0.6 else scaleFactor   # Determine if we need to scale our content inward
-                scaleFactor = 2 if scaleCalc > 2 else scaleFactor    # Only allow outward scaling up to 2x
+
                 idHead = structure_whitespace("#", 5, "-", True) + " "    # Format our ID header value
-                interfaceHead = structure_whitespace("INTERFACE", int(15*(scaleFactor*0.8)), "-", True) + " "    # Format our interface header header value
+                interfaceHead = structure_whitespace("INTERFACE", 15, "-", True) + " "    # Format our interface header header value
                 ipHead = structure_whitespace("IP", 15, "-", True) + " "    # Format our ip header value
-                hostHead = structure_whitespace("HOSTNAME", int(20*(scaleFactor*0.8)), "-", True) + " "    # Format our host header value
+                hostHead = structure_whitespace("HOSTNAME", 20, "-", True) + " "    # Format our host header value
                 macAddrHead = structure_whitespace("MAC ADDR", 20, "-", True) + " "    # Format our mac address header value
-                vendorHead = structure_whitespace("MAC VENDOR", int(12*(scaleFactor*1.5)), "-", True) + " "    # Format our mac vendor header value
+                vendorHead = structure_whitespace("MAC VENDOR", 12, "-", True) + " "    # Format our mac vendor header value
                 expireHead = structure_whitespace("EXPIRES", 12, "-", True) + " "    # Format our expiration header value
                 linkHead = structure_whitespace("LINK", 8, "-", True) + " "    # Format our link type header value
                 header = idHead + interfaceHead + ipHead + hostHead + macAddrHead + vendorHead + expireHead + linkHead   # Format our print header
@@ -4078,11 +4064,11 @@ def main():
                     counter = 0    # Assign a loop counter
                     for key,value in arpTable["arp"].items():
                         id = structure_whitespace(str(key), 5, " ", True) + " "    # Get our entry number
-                        interface = structure_whitespace(value["interface"], int(15*(scaleFactor*0.8)), " ", True)  + " "   # Get our interface ID
+                        interface = structure_whitespace(value["interface"], 15, " ", True)  + " "   # Get our interface ID
                         ip = structure_whitespace(value["ip"], 15, " ", True) + " "    # Get our IP
-                        hostname = structure_whitespace(value["hostname"], int(20*(scaleFactor*0.8)), " ", True) + " "    # Get our hostnames
+                        hostname = structure_whitespace(value["hostname"], 20, " ", True) + " "    # Get our hostnames
                         macAddr = structure_whitespace(value["mac_addr"], 20, " ", True) + " "    # Get our MAC address level
-                        macVendor = structure_whitespace(value["mac_vendor"], int(12*(scaleFactor*1.5)), " ", True) + " "   # Get our MAC vendor
+                        macVendor = structure_whitespace(value["mac_vendor"], 12, " ", True) + " "   # Get our MAC vendor
                         expires = structure_whitespace(value["expires"], 12, " ", True) + " "   # Get our expiration
                         link = structure_whitespace(value["type"], 8, " ", True) + " "   # Get our link
                         # If we want to return all values
@@ -4090,36 +4076,36 @@ def main():
                             print(header) if counter == 0 else None  # Print our header if we are just starting loop
                             print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
                         # Check if user wants to filter by interface
-                        elif arpFilter.startswith(("-i=","--iface=")):
-                            ifaceExp = arpFilter.replace("-i=","").replace("--iface","")    # Remove our filter identifier to capture our interface expression
+                        elif arpFilter.startswith(("-i=", "--iface=")):
+                            ifaceExp = arpFilter.replace("-i=","").replace("--iface=","")    # Remove our filter identifier to capture our interface expression
                             print(header) if counter == 0 else None  # Print our header if we are just starting loop
                             # Check that our interface matches our interface expression
                             if value["interface"].startswith(ifaceExp):
                                 print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
                         # Check if user wants to filter by IP
                         elif arpFilter.startswith(("-p=","--ip=")):
-                            ipExp = arpFilter.replace("-p=","").replace("--ip","")    # Remove our filter identifier to capture our IP expression
+                            ipExp = arpFilter.replace("-p=","").replace("--ip=","")    # Remove our filter identifier to capture our IP expression
                             print(header) if counter == 0 else None  # Print our header if we are just starting loop
                             # Check that our interface matches our IP expression
                             if value["ip"].startswith(ipExp):
                                 print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
                         # Check if user wants to filter by hostname
                         elif arpFilter.startswith(("-h=","--hostname=")):
-                            hostnameExp = arpFilter.replace("-h=","").replace("--hostname","")    # Remove our filter identifier to capture our hostname expression
+                            hostnameExp = arpFilter.replace("-h=","").replace("--hostname=","")    # Remove our filter identifier to capture our hostname expression
                             print(header) if counter == 0 else None  # Print our header if we are just starting loop
                             # Check that our interface matches our hostname expression
                             if value["hostname"].startswith(hostnameExp):
                                 print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
                         # Check if user wants to filter by MAC
                         elif arpFilter.startswith(("-m=","--mac=")):
-                            macExp = arpFilter.replace("-m=","").replace("--mac","")    # Remove our filter identifier to capture our MAC expression
+                            macExp = arpFilter.replace("-m=","").replace("--mac=","")    # Remove our filter identifier to capture our MAC expression
                             print(header) if counter == 0 else None  # Print our header if we are just starting loop
                             # Check that our interface matches our MAC expression
                             if value["mac_addr"].startswith(macExp):
                                 print(id + interface + ip + hostname + macAddr + macVendor + expires + link)    # Print our data values
                         # Check if user wants to filter by MAC vendor
                         elif arpFilter.startswith(("-v=","--vendor=")):
-                            vendorExp = arpFilter.replace("-v=","").replace("--vendor","")    # Remove our filter identifier to capture our MAC vendor expression
+                            vendorExp = arpFilter.replace("-v=","").replace("--vendor=","")    # Remove our filter identifier to capture our MAC vendor expression
                             print(header) if counter == 0 else None  # Print our header if we are just starting loop
                             # Check that our interface matches our MAC vendor expression
                             if value["mac_vendor"].startswith(vendorExp):
@@ -4438,12 +4424,6 @@ def main():
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
                 supportedFilters = ("--all", "-a", "-d", "default", "-i=","--iface=","-v=","--vlan=","-n=", "--name=", "-c=", "--cidr=", "-j", "--json", "-rj", "--read-json")    # Tuple of support filter arguments
-                maxWidth = 200   # Assign the max width needed for our data table
-                tWidth = get_terminal_width()   # Get our terminal width and determine if we need to scale content
-                scaleCalc = tWidth/maxWidth    # Calculate our scale percentage
-                scaleFactor = 1 if tWidth <= maxWidth else scaleCalc    # Determine if we need to scale our content outward
-                scaleFactor = scaleCalc if 1 > scaleCalc >= 0.4 else scaleFactor   # Determine if we need to scale our content inward
-                scaleFactor = 1.5 if scaleCalc > 1.5 else scaleFactor    # Only allow outward scaling up to 2x
                 # Check if our filter input is all or default
                 if ifaceFilter.lower() in supportedFilters or ifaceFilter.startswith(supportedFilters):
                     ifaceData = get_interfaces(pfsenseServer, user, key)  # Get our data dictionary
@@ -4473,7 +4453,7 @@ def main():
                         # If user is not requesting JSON, print normally
                         else:
                             # Format our header values
-                            headerName = structure_whitespace("NAME", int(30*scaleFactor), "-", True) + " "    # NAME header
+                            headerName = structure_whitespace("NAME", 30, "-", True) + " "    # NAME header
                             headerIface = structure_whitespace("INTERFACE", 18, "-", True) + " "    # INTERFACE header
                             headerId = structure_whitespace("ID", 8, "-", True) + " "    # ID header
                             headerType = structure_whitespace("TYPE", 10, "-", True) + " "    # TYPE header
@@ -4484,7 +4464,7 @@ def main():
                             dataTable = header    # Assign a dataTable our loop will populate with data before printing
                             for pfId,data in ifaceData["ifaces"].items():
                                 # Format and print our values
-                                name = structure_whitespace(data["descr"], int(30*scaleFactor), " ", True) + " "    # Format our name value
+                                name = structure_whitespace(data["descr"], 30, " ", True) + " "    # Format our name value
                                 iface = structure_whitespace(data["id"], 18, " ", True) + " "    # Format our iface value
                                 id = structure_whitespace(data["pf_id"], 8, " ", True) + " "    # Format our pf_id value
                                 type = structure_whitespace(data["type"], 10, " ", True) + " "    # Format our IP type
@@ -4580,15 +4560,9 @@ def main():
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
                 tunables = get_system_tunables(pfsenseServer, user, key)
-                maxWidth = 140   # Assign the max width needed for our data table
-                tWidth = get_terminal_width()   # Get our terminal width and determine if we need to scale content
-                scaleCalc = tWidth/maxWidth    # Calculate our scale percentage
-                scaleFactor = 1 if tWidth <= maxWidth else scaleCalc    # Determine if we need to scale our content outward
-                scaleFactor = scaleCalc if 1 > scaleCalc >= 0.2 else scaleFactor   # Determine if we need to scale our content inward
-                scaleFactor = 2 if scaleCalc > 2 else scaleFactor    # Only allow outward scaling up to 2x
                 numHead = structure_whitespace("#", 3, "-", True) + " "    # Format our number header value
                 nameHead = structure_whitespace("NAME", 40, "-", True) + " "    # Format our name header value
-                descrHead = structure_whitespace("DESCRIPTION", int(scaleFactor*30), "-", True) + " "    # Format our ip description value
+                descrHead = structure_whitespace("DESCRIPTION", 30, "-", True) + " "    # Format our ip description value
                 valueHead = structure_whitespace("VALUE", 15, "-", True) + " "    # Format our host value value
                 idHead = structure_whitespace("ID", 40, "-", True) + " "    # Format our host value value
                 header = numHead + nameHead + descrHead + valueHead + idHead  # Format our print header
@@ -4599,7 +4573,7 @@ def main():
                     for key,value in tunables["tunables"].items():
                         tunNumber = structure_whitespace(str(counter), 3, " ", True) + " "    # Get our entry number
                         tunName = structure_whitespace(value["name"], 40, " ", True)  + " "   # Get our tunable name
-                        tunDescr = structure_whitespace(value["descr"], int(scaleFactor*30), " ", True) + " "    # Get our tunable description
+                        tunDescr = structure_whitespace(value["descr"], 30, " ", True) + " "    # Get our tunable description
                         tunValue = structure_whitespace(value["value"], 15, " ", True) + " "    # Get our value
                         tunId = structure_whitespace(value["id"], 40, " ", True) + " "    # Get our ID
                         # If we want to return all values

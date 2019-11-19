@@ -1,4 +1,3 @@
-
 pfSense Automator
 =========
 PFSENSE-AUTOMATOR - pfSense Automation command line tool<br>
@@ -14,6 +13,14 @@ as they would via the WebConfigurator UI
 
 Supported pfSense builds: 2.3.x*, 2.4.x, 2.5.x<br>
 <sub><sup>*- pfSense 2.3.x is officially EOL. While many of these commands will function on pfSense 2.3.x, there will be no further development to ensure it's functionality</sup></sub>
+
+Installation
+------------
+pfsense-automator is distributed with all dependencies included. It is recommended that you use the included `pfa_installer` executable to ensure all dependencies are moved to the correct location and symlinks are properly created. To install `pfsense-automator` run the following commands<br>
+
+Extract 
+- `tar xvzf <downloaded tar.gz file path>` _Note: Windows systems may need additional software to extract .tar.gz files_
+- 
 
 Syntax
 ------------
