@@ -4301,7 +4301,7 @@ def main():
                         sys.exit(1)
                 # If we encountered an error pulling our HA Sync data
                 else:
-                    print(get_exit_message(haSyncData["ec"]),pfsenseServer,pfsenseAction,"","")    # Print our error message
+                    print(get_exit_message(haSyncData["ec"],pfsenseServer,pfsenseAction,"",""))    # Print our error message
                     sys.exit(haSyncData["ec"])     # Exit on our non-zero function return code
 
             # Assign functions/processes for --setup-hasync
