@@ -18,26 +18,42 @@ Installation
 ------------
 pfsense-automator is distributed with all dependencies included. It is recommended that you use the included `pfa_installer` executable to ensure all dependencies are moved to the correct location and symlinks are properly created. To install `pfsense-automator` run the following commands<br>
 
-Extract 
-- `tar xvzf <downloaded tar.gz file path>` _Note: Windows systems may need additional software to extract .tar.gz files_
-- 
+**Extract**<br>
+Extract the program folder from the .tar.gz file _Note: Windows systems may need additional software to extract .tar.gz files_
+- `tar xvzf <downloaded tar.gz file path>`
+
+**Run the Installer**<br>
+Locate the extracted folder, this should be titled `pfsense-automator`. Execute the installer `pfa_installer` in this folder 
+- macOS: `./pfa_installer`
+- Ubuntu: `sudo ./pfa_installer`
+- FreeBSD: `sudo ./pfa_installer`
+- Windows `pfa_install.exe` _Note: you must start command prompt as administrator_
+
+**Uninstall**<br>
+If you need to uninstall `pfsense-automator` for any reason, you can do so easily using the same `pfa_installer` executable
+- macOS: `/usr/local/share/pfsense-automator/pfa_installer uninstall`
+- Ubuntu: `/usr/share/pfsense-automator/pfa_installer uninstall`
+- FreeBSD: `/usr/share/pfsense-automator/pfa_installer uninstall`
+- Windows: `"\Program Files\pfsense-automator\pfsense-automator.exe" uninstall` _Note: you may need to `cd` into the directory containing `pfa_installer.exe`_
+
 
 Syntax
 ------------
+**Syntax Types**<br>
 pfsense-automator can be run either inline (for automation and scriptability) or interactively via command line (for added security or assistance). If the command's syntax is fulfilled completely, then inline mode is assumed and no input prompts will display. However, if you leave out an argument (you may specify some arguments inline and specify the rest interctively), you will be prompted to input a value for that argument. This is also useful if you cannot remember the exact syntax for a command
 - INLINE SYNTAX
     - `pfsense-automator <pfSense IP or hostname> <COMMAND> <ARGUMENTS> -u <USERNAME> -p <PASSWORD>`
 - INTERACTIVE SYNTAX
     - `pfsense-automator <pfSense IP or hostname> <COMMAND>` 
 
-- ALTERNATE PROTOCOL & PORT<br>
+**ALTERNATE PROTOCOL & PORT**<br>
 By default, pfsense-automator uses the HTTPS protocol over port 443. Some users may have pfSense's webConfigurator configured to work off of an alternate protocol and or port. You may format the desired protocol and port to the `<pfSense IP or hostname>` field as a URL. _Note: using HTTP protocol is not recommended as this will allow login credentials to pass in cleartext over your network(s)_
     - Examples
         - `pfsense-automator http://127.0.0.1:80 --check-version -u admin -p pfsense`    (Makes an HTTP connection to pfSense over port 80)
         - `pfsense-automator 127.0.0.1:8443 --check-version -u admin -p pfsense` (Makes an HTTPS connection to pfSense over port 8443)
 
-- PFSENSE-AUTOMATOR VERSION<br>
-To check the current version of pfsense-automator, you can run the following command:
+**PFSENSE-AUTOMATOR VERSION**<br>
+To check the current version of pfsense-automator, you can run the following command:<br>
 `pfsense-automator -v`
 
 Commands
@@ -133,25 +149,25 @@ Commands
         - `<xmlrpc_user>` -  Specify the username of the remote pfSense system XMLRPC will use to authenticate
         - `<xmlrpc_passwd>` -  Specify the password of the remote pfSense system XMLRPC will use to authenticate
         - `<xmlrpc_opts>` -  Specify the configuration areas XMLRPC will sync between systems
-                - `all` - Sync all available configuration areas
-                - `users` - Sync user configurations between systems
-                - `authservers` - Sync authentication server configurations between systems
-                - `certs` - Sync certificate configurations between systems
-                - `rules` - Sync firewall rule configurations between systems
-                - `schedules` - Sync firewall schedule configurations between systems
-                - `alises` - Sync firewall alias configurations between systems
-                - `nat` - Sync NAT configurations between systems
-                - `ipsec` - Sync IPsec configurations between systems
-                - `openvpn` - Sync OpenVPN configurations between systems
-                - `dhcpd` - Sync DHCP configurations between systems
-                - `wol` - Sync Wake-on-LAN configurations between systems
-                - `staticroutes` - Sync static route configurations between systems
-                - `lb` - Sync load balancer configurations between systems
-                - `virtualip` - Sync virtual IP configurations between systems
-                - `trafficshaper` - Sync traffic shaper configurations between systems
-                - `trafficshaperlimiter` - Sync traffic shaper limiter configurations between systems
-                - `dnsforwarder` - Sync DNS Resolver and DNS Forwarder configurations between systems
-                - `captiveportal` - Sync captive portal configurations between systems
+            - `all` - Sync all available configuration areas
+            - `users` - Sync user configurations between systems
+            - `authservers` - Sync authentication server configurations between systems
+            - `certs` - Sync certificate configurations between systems
+            - `rules` - Sync firewall rule configurations between systems
+            - `schedules` - Sync firewall schedule configurations between systems
+            - `alises` - Sync firewall alias configurations between systems
+            - `nat` - Sync NAT configurations between systems
+            - `ipsec` - Sync IPsec configurations between systems
+            - `openvpn` - Sync OpenVPN configurations between systems
+            - `dhcpd` - Sync DHCP configurations between systems
+            - `wol` - Sync Wake-on-LAN configurations between systems
+            - `staticroutes` - Sync static route configurations between systems
+            - `lb` - Sync load balancer configurations between systems
+            - `virtualip` - Sync virtual IP configurations between systems
+            - `trafficshaper` - Sync traffic shaper configurations between systems
+            - `trafficshaperlimiter` - Sync traffic shaper limiter configurations between systems
+            - `dnsforwarder` - Sync DNS Resolver and DNS Forwarder configurations between systems
+            - `captiveportal` - Sync captive portal configurations between systems
 
 - `--read-users`: Reads current local user database
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-users <argument>`
