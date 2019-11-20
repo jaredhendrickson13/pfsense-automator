@@ -46,13 +46,13 @@ pfsense-automator can be run either inline (for automation and scriptability) or
 - INTERACTIVE SYNTAX
     - `pfsense-automator <pfSense IP or hostname> <COMMAND>` 
 
-**ALTERNATE PROTOCOL & PORT**<br>
+**Alternate Protocol & Port**<br>
 By default, pfsense-automator uses the HTTPS protocol over port 443. Some users may have pfSense's webConfigurator configured to work off of an alternate protocol and or port. You may format the desired protocol and port to the `<pfSense IP or hostname>` field as a URL. _Note: using HTTP protocol is not recommended as this will allow login credentials to pass in cleartext over your network(s)_
     - Examples
         - `pfsense-automator http://127.0.0.1:80 --check-version -u admin -p pfsense`    (Makes an HTTP connection to pfSense over port 80)
         - `pfsense-automator 127.0.0.1:8443 --check-version -u admin -p pfsense` (Makes an HTTPS connection to pfSense over port 8443)
 
-**PFSENSE-AUTOMATOR VERSION**<br>
+**Version**<br>
 To check the current version of pfsense-automator, you can run the following command:<br>
 `pfsense-automator -v`
 
