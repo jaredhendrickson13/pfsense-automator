@@ -491,6 +491,21 @@ def get_exit_message(ec, server, command, data1, data2):
             "export_fail" : "Failed to export HA Sync data as JSON",
             "descr": structure_whitespace("  --read-hasync", cmdFlgLen, " ", True) + " : Read HA sync configuration from System > HA Sync",
         },
+        # Error/success messages for --setup-hasync
+        "--setup-hasync" : {
+            0: "Successfully setup HA sync",
+            2: "Error: Unexpected error configuring HA sync",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_enable" : "Error: Invalid PFSYNC enable value `" + data1 + "`. Expected `enable`,`disable`, or `default`",
+            "invalid_interface" : "Error: Unknown interface `" + data1 + "`",
+            "invalid_ip" : "Error: Invalid " + data1 + " peer IP `" + data2 + "`",
+            "invalid_user" : "Error: Invalid XMLRPC username `" + data1 + "`",
+            "invalid_passwd" : "Error: Invalid XMLRPC password length",
+            "descr": structure_whitespace("  --setup-hasync", cmdFlgLen, " ", True) + " : Configure HA Sync",
+        },
         # Error/success messages for --read-carp-status
         "--read-carp-status" : {
             2 : "Error: Unexpected error checking CARP status. No CARP interfaces found",
@@ -1392,7 +1407,7 @@ def get_ha_sync(server, user, key):
                 # Check that we have our expected input tag
                 expectedTag = "<input name=\""+cb+"\""
                 if expectedTag in getHaSyncData["text"]:
-                    haSync["ha_sync"][cb] = "yes" if "checked=\"checked\"" in getHaSyncData["text"].split(expectedTag)[1].split("</label>")[0] else ""    # Save "yes" if check box is checked, otherwise empty string
+                    haSync["ha_sync"][cb] = "on" if "checked=\"checked\"" in getHaSyncData["text"].split(expectedTag)[1].split("</label>")[0] else ""    # Save "yes" if check box is checked, otherwise empty string
                 # If we did not find this input tag in our HTML response
                 else:
                     haSync["ha_sync"][cb] = ""    # Assume default
@@ -1431,6 +1446,55 @@ def get_ha_sync(server, user, key):
             haSync["ec"] = 15    # ASsign exit code 15 (permission denied)
     # Return our HA sync dictionary
     return haSync
+
+# setup_hasync() configures HA availability syncing from System > HA Sync.
+def setup_hasync(server, user, key, enablePfsync, pfsyncIf, pfsyncIp, xmlsyncIP, xmlsyncUname, xmlsyncPass, xmlsyncOptions):
+    # Local variables
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)  # Assign our base URL
+    hasyncSetup = 2    # Initialize our return code as 2 (error)
+    hasyncConf = get_ha_sync(server, user, key)    # Pull our existing HA sync config
+    # Check that we could pull our existing config
+    if hasyncConf["ec"] == 0:
+        # Format our POST data dictionary
+        hasyncPostData = {
+            "__csrf_magic": get_csrf_token(url + "/system_hasync.php","GET"),
+            "pfsyncenabled": enablePfsync.lower() if enablePfsync.lower() in ["on",""] else hasyncConf["ha_sync"]["pfsyncenabled"],
+            "pfsyncinterface": pfsyncIf if pfsyncIf.lower() != "default" else hasyncConf["ha_sync"]["pfsyncinterface"],
+            "pfsyncpeerip": pfsyncIp if pfsyncIp.lower() != "default" else hasyncConf["ha_sync"]["pfsyncpeerip"],
+            "synchronizetoip": xmlsyncIP if xmlsyncIP.lower() != "default" else hasyncConf["ha_sync"]["synchronizetoip"],
+            "username": xmlsyncUname if xmlsyncUname.lower() != "default" else hasyncConf["ha_sync"]["username"],
+            "passwordfld": xmlsyncPass if xmlsyncPass.lower() != "default" else None,
+            "passwordfld_confirm": xmlsyncPass if xmlsyncPass.lower() != "default" else None,
+            "synchronizeusers": xmlsyncOptions["synchronizeusers"] if xmlsyncOptions["synchronizeusers"].lower() != "default" else hasyncConf["ha_sync"]["synchronizeusers"],
+            "synchronizeauthservers": xmlsyncOptions["synchronizeauthservers"] if xmlsyncOptions["synchronizeauthservers"].lower() != "default" else hasyncConf["ha_sync"]["synchronizeauthservers"],
+            "synchronizecerts": xmlsyncOptions["synchronizecerts"] if xmlsyncOptions["synchronizecerts"].lower() != "default" else hasyncConf["ha_sync"]["synchronizecerts"],
+            "synchronizerules": xmlsyncOptions["synchronizerules"] if xmlsyncOptions["synchronizerules"].lower() != "default" else hasyncConf["ha_sync"]["synchronizerules"],
+            "synchronizeschedules": xmlsyncOptions["synchronizeschedules"] if xmlsyncOptions["synchronizeschedules"].lower() != "default" else hasyncConf["ha_sync"]["synchronizeschedules"],
+            "synchronizealiases": xmlsyncOptions["synchronizealiases"] if xmlsyncOptions["synchronizealiases"].lower() != "default" else hasyncConf["ha_sync"]["synchronizealiases"],
+            "synchronizenat": xmlsyncOptions["synchronizenat"] if xmlsyncOptions["synchronizenat"].lower() != "default" else hasyncConf["ha_sync"]["synchronizenat"],
+            "synchronizeopenvpn": xmlsyncOptions["synchronizeopenvpn"] if xmlsyncOptions["synchronizeopenvpn"].lower() != "default" else hasyncConf["ha_sync"]["synchronizeopenvpn"],
+            "synchronizedhcpd": xmlsyncOptions["synchronizedhcpd"] if xmlsyncOptions["synchronizedhcpd"].lower() != "default" else hasyncConf["ha_sync"]["synchronizedhcpd"],
+            "synchronizewol": xmlsyncOptions["synchronizewol"] if xmlsyncOptions["synchronizewol"].lower() != "default" else hasyncConf["ha_sync"]["synchronizewol"],
+            "synchronizeipsec": xmlsyncOptions["synchronizeipsec"] if xmlsyncOptions["synchronizeipsec"].lower() != "default" else hasyncConf["ha_sync"]["synchronizeipsec"],
+            "synchronizestaticroutes": xmlsyncOptions["synchronizestaticroutes"] if xmlsyncOptions["synchronizestaticroutes"].lower() != "default" else hasyncConf["ha_sync"]["synchronizestaticroutes"],
+            "synchronizelb": xmlsyncOptions["synchronizelb"] if xmlsyncOptions["synchronizelb"].lower() != "default" else hasyncConf["ha_sync"]["synchronizelb"],
+            "synchronizevirtualip": xmlsyncOptions["synchronizevirtualip"] if xmlsyncOptions["synchronizevirtualip"].lower() != "default" else hasyncConf["ha_sync"]["synchronizevirtualip"],
+            "synchronizetrafficshaper": xmlsyncOptions["synchronizetrafficshaper"] if xmlsyncOptions["synchronizetrafficshaper"].lower() != "default" else hasyncConf["ha_sync"]["synchronizetrafficshaper"],
+            "synchronizetrafficshaperlimiter": xmlsyncOptions["synchronizetrafficshaperlimiter"] if xmlsyncOptions["synchronizetrafficshaperlimiter"].lower() != "default" else hasyncConf["ha_sync"]["synchronizetrafficshaperlimiter"],
+            "synchronizednsforwarder": xmlsyncOptions["synchronizednsforwarder"] if xmlsyncOptions["synchronizednsforwarder"].lower() != "default" else hasyncConf["ha_sync"]["synchronizednsforwarder"],
+            "synchronizecaptiveportal": xmlsyncOptions["synchronizecaptiveportal"] if xmlsyncOptions["synchronizecaptiveportal"].lower() != "default" else hasyncConf["ha_sync"]["synchronizecaptiveportal"],
+            "save": "Save"
+        }
+        # Make our POST request, then check if our changes were applied
+        postHasyncConf = http_request(url + "/system_hasync.php", hasyncPostData, {}, {}, 45, "POST")
+        del hasyncPostData["__csrf_magic"],hasyncPostData["save"],hasyncPostData["passwordfld"],hasyncPostData["passwordfld_confirm"]    # Delete unneeded dict keys
+        updateHasyncConf = get_ha_sync(server, user, key)    # Repull our existing config
+        hasyncSetup = 0 if updateHasyncConf["ha_sync"] == hasyncPostData else hasyncSetup    # Return exit code 0 if our configurations match
+    # If we could not pull our existing config, return the code returned by get_hasync()
+    else:
+        hasyncSetup = hasyncConf["ec"]
+    # Return our return code
+    return hasyncSetup
 
 # get_system_advanced_admin() pulls our current configuration from System > Advanced > Admin Access and saves it to a dictionary
 def get_system_advanced_admin(server, user, key):
@@ -2171,6 +2235,26 @@ def get_interfaces(server, user, key):
             ifaces["ec"] = 9    # Assign could not parse exit code
     # Return our data dictionary
     return ifaces
+
+# find_interface_pfid() will search the interface dictionary and return the physical if ID, the pf ID or the descriptive ID of a interface given a value
+def find_interface_pfid(server, user, key, id, dct):
+    # Local variables
+    pfId = {"ec": 2, "pf_id": ""}    # Initialize our return dictionary
+    dct = get_interfaces(server, user, key) if dct in [None, {}] else dct    # Allow user to pass in dictionary, otherwise pull it
+    # Check that our dictionary was populated successfully
+    if dct["ec"] == 0:
+        # Loop through our interface dict and see if our values match
+        for key,value in dct["ifaces"].items():
+            # Check if our id matches the entries in this key
+            if id in [value["pf_id"],value["id"]] or id.lower() == value["descr"].lower():
+                pfId["pf_id"] = value["pf_id"]    # save our key value as the pf_id
+                pfId["ec"] = 0    # Update our return code to 0 (success)
+                break    # Break our loop as we only need one value
+    # If we did not pull our dictionary successfully, pass the return code listed in the dictionary
+    else:
+        pfId["ec"] = dct["ec"]
+    # Return our dictiontary
+    return pfId
 
 # get_vlan_ids() pulls existing VLAN configurations from Interfaces > Assignments > VLANs
 def get_vlan_ids(server, user, key):
@@ -4164,7 +4248,7 @@ def main():
                 # Check that we did not encounter an error pulling our HA Sync data
                 if haSyncData["ec"] == 0:
                     # FORMAT OUR PRINT DATA
-                    pfToggle = "enabled" if haSyncData["ha_sync"]["pfsyncenabled"] == "yes" else "disabled"    # Change "yes" to enabled
+                    pfToggle = "enabled" if haSyncData["ha_sync"]["pfsyncenabled"] == "on" else "disabled"    # Change "yes" to enabled
                     pfsyncHead = structure_whitespace("--STATE SYNC SETTINGS (PFSYNC)",40,"-",True)    # Fromat our header
                     pfsyncEnable = structure_whitespace("Enabled:",30," ",True) + pfToggle    # Format our enable value
                     pfsyncIface = structure_whitespace("PFSYNC Interface:",30," ",True) + haSyncData["ha_sync"]["pfsyncinterface"]    # Format our interface
@@ -4177,7 +4261,7 @@ def main():
                     # For each SYNC option enabled, print
                     for so in syncAreas:
                         # Check if option is enabled
-                        if haSyncData["ha_sync"][so] == "yes":
+                        if haSyncData["ha_sync"][so] == "on":
                             xmlrpcOptStr = xmlrpcOptStr + "\n  - " + so.replace("synchronize","")
                     xmlrpcSyncOpt = structure_whitespace("Synced options:",30," ",True) + xmlrpcOptStr   # Format our SYNC options
                     xmlrpcData = xmlrpcHeader + "\n" + xmlrpcIp + "\n" + xmlrpcUser + "\n" + xmlrpcSyncOpt    # Format our XMLRPC data set
@@ -4219,6 +4303,103 @@ def main():
                 else:
                     print(get_exit_message(haSyncData["ec"]),pfsenseServer,pfsenseAction,"","")    # Print our error message
                     sys.exit(haSyncData["ec"])     # Exit on our non-zero function return code
+
+            # Assign functions/processes for --setup-hasync
+            elif pfsenseAction == "--setup-hasync":
+                # Action variables
+                availSyncOpts = {"synchronizeusers": "", "synchronizeauthservers": "", "synchronizecerts": "",
+                                 "synchronizerules": "", "synchronizeschedules": "", "synchronizealiases": "",
+                                 "synchronizenat": "", "synchronizeipsec": "", "synchronizeopenvpn": "",
+                                 "synchronizedhcpd": "", "synchronizewol": "", "synchronizestaticroutes": "",
+                                 "synchronizelb": "", "synchronizevirtualip": "", "synchronizetrafficshaper": "",
+                                 "synchronizetrafficshaperlimiter": "", "synchronizednsforwarder": "",
+                                 "synchronizecaptiveportal": ""}
+                enablePfsync = filter_input(thirdArg) if len(sys.argv) > 3 else input("Enable PFSYNC [enable,disable]: ")    # Enable/disable pfsync input
+                pfsyncIf = filter_input(fourthArg) if len(sys.argv) > 4 else input("PFSYNC interface: ")    # Assign our pfsync interface input
+                pfsyncIp = filter_input(fifthArg) if len(sys.argv) > 5 else input("PFSYNC Peer IP: ")    # Assign our pfsync peer IP input
+                pfsyncIp = "" if pfsyncIp.lower() == "none" else pfsyncIp    # Allow input none as blank string
+                xmlsyncIp = filter_input(sixthArg) if len(sys.argv) > 6 else input("XMLRPC Peer IP: ")    # Assign our xmlrpc IP input
+                xmlsyncIp = "" if xmlsyncIp.lower() == "none" else xmlsyncIp    # Asslow input none as blank string
+                xmlsyncUname = seventhArg if len(sys.argv) > 7 else input("XMLRPC Peer Username: ")    # Assing our xmlrpc username input
+                xmlsyncPass = eighthArg if len(sys.argv) > 8 else getpass.getpass("XMLRPC Peer Password: ")     # Asign our xmlrpc password input
+                xmlSyncOptions = ninthArg + "," if len(sys.argv) > 9 else None     # Assign our xmlrpc sync options
+                # If interactive mode was used before passing in sync options, loop through options and have user confirm sync options
+                if xmlSyncOptions is None:
+                    for key,value in availSyncOpts.items():
+                        # Loop until we get our expected value
+                        while True:
+                            # Prompt user for input
+                            userInput = input("Synchronize " + key.replace("synchronize","") + " [yes,no,default]: ").lower()
+                            # Check that our users input was valid
+                            if userInput in ["yes","no","default",""]:
+                                userInput = "on" if userInput == "yes" else userInput  # Assume default if empty input
+                                userInput = "default" if userInput == "" else userInput    # Assume default if empty input
+                                userInput = "" if userInput == "no" else userInput    # Change "no" to blank string, this is how the POST request is formatted
+                                availSyncOpts[key] = userInput    # Assign the new value to our sync options dictionary
+                                break    # Break our while loop to move to the next for loop item
+                            # Print error if invalid input
+                            else:
+                                print("Unknown input `" + userInput + "`. Expected `yes`,`no,`default` or blank entry")
+                user = eleventhArg if tenthArg == "-u" and eleventhArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = thirteenthArg if twelfthArg == "-p" and thirteenthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # INPUT VALIDATION
+                # Check if our enable pfsync argument is valid
+                if enablePfsync in ["enable","disable","yes","no","default"]:
+                    enablePfsync = "on" if enablePfsync in ["enable","yes"] else enablePfsync
+                    enablePfsync = "" if enablePfsync in ["disable","no"] else enablePfsync
+                    # Check if our interface value is valid
+                    ifPfId = find_interface_pfid(pfsenseServer,user,key,pfsyncIf,None)    # Try to find our pf_id value for this interface
+                    # Check if we received an auth error trying to find the pf_id
+                    if ifPfId["ec"] == 0:
+                        if ifPfId["pf_id"] != "":
+                            # Check if our pfsync IP is valid
+                            if validate_ip(pfsyncIp) or pfsyncIp == "":
+                                # Check if our xmlrpc IP is valid
+                                if validate_ip(xmlsyncIp) or xmlsyncIp == "":
+                                    # Check if our username is valid
+                                    if len(xmlsyncUname) >= 1:
+                                        # Check if our xmlrpc passwd is valid
+                                        if len(xmlsyncPass) >= 1:
+                                            # If inline mode was used to pass in sync options, parse them into our dictionary
+                                            if xmlSyncOptions is not None:
+                                                userOptions = xmlSyncOptions.split(",")
+                                                # Loop through our available options and check for matches
+                                                for key,value in availSyncOpts.items():
+                                                    if key.replace("synchronize","") in userOptions or "all" in userOptions:
+                                                        availSyncOpts[key] = "on"
+                                            # Run our setup function, print our return message and exit on return code
+                                            setupHaSyncEc = setup_hasync(pfsenseServer, user, key, enablePfsync, ifPfId["pf_id"], pfsyncIp, xmlsyncIp, xmlsyncUname, xmlsyncPass, availSyncOpts)
+                                            print(get_exit_message(setupHaSyncEc,pfsenseServer,pfsenseAction,"",""))
+                                            sys.exit(setupHaSyncEc)
+                                        # If our XMLRPC passwd is invalid
+                                        else:
+                                            print(get_exit_message("invalid_passwd",pfsenseServer,pfsenseAction,xmlsyncPass,""))
+                                            sys.exit(1)
+                                    # If our XMLRPC username is invalid
+                                    else:
+                                        print(get_exit_message("invalid_user",pfsenseServer,pfsenseAction,xmlsyncUname,""))
+                                        sys.exit(1)
+                                # If our xmlrpc IP is invalid
+                                else:
+                                    print(get_exit_message("invalid_ip",pfsenseServer,pfsenseAction,"XMLRPC",pfsyncIp))
+                                    sys.exit(1)
+                            # If our pfsync IP is invalid
+                            else:
+                                print(get_exit_message("invalid_ip",pfsenseServer,pfsenseAction,"PFSYNC",pfsyncIp))
+                                sys.exit(1)
+                        # If our interfcae value is invalid
+                        else:
+                            print(get_exit_message("invalid_interface",pfsenseServer,pfsenseAction,pfsyncIf,""))
+                            sys.exit(1)
+                    # If we received an error trying to find our pf_id
+                    else:
+                        print(get_exit_message(ifPfId["ec"],pfsenseServer,pfsenseAction,"",""))
+                        sys.exit(ifPfId["ec"])
+                # If our enable pfsync argument is invalid
+                else:
+                    print(get_exit_message("invalid_enable",pfsenseServer,pfsenseAction,enablePfsync,""))    # Print error msg
+                    sys.exit(1)
+
             # Assign functions/processes for --read-xml
             elif pfsenseAction == "--read-xml":
                 # Action variables

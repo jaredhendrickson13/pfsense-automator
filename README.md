@@ -122,6 +122,36 @@ Commands
         - `--xmlrpc` (`-x`) : Returns only XMLRPC configuration
         - `--read-json` (`-rf`) : Prints HA Sync data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports HA Sync data to a JSON file given an existing directory    
+        
+- `--setup-hasync` : Configures HA Sync settings _Note: Ensure both pfSense systems are running the same pfSense version. It is recommended to have a dedicated interface for PFSYNC if enabled_
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-hasync <pfsync_enable> <pfsync_if> <pfsync_ip <xmlrpc_ip> <xmlrpc_user> <xmlrpc_passwd> <xmlrpc_opts>`
+    - **Arguments**:
+        - `<pfsync_enable>` - Enables or disables PFSYNC. Use `default` to retain existing configuration (`enable`,`disable`,`default`)
+        - `<pfsync_if>` - Specify the interface PFSYNC will use. This may be the physical interface name (e.g. `igb1`), the pfSense interface ID (e.g. `opt1`) or the interface descriptive name (e.g. `WAN2`)
+        - `<pfsync_ip>` - Specify the IP of the remote pfSense system PFSYNC will sync to
+        - `<xmlrpc_ip>` -  Specify the IP of the remote pfSense system XMLRPC will sync to
+        - `<xmlrpc_user>` -  Specify the username of the remote pfSense system XMLRPC will use to authenticate
+        - `<xmlrpc_passwd>` -  Specify the password of the remote pfSense system XMLRPC will use to authenticate
+        - `<xmlrpc_opts>` -  Specify the configuration areas XMLRPC will sync between systems
+                - `all` - Sync all available configuration areas
+                - `users` - Sync user configurations between systems
+                - `authservers` - Sync authentication server configurations between systems
+                - `certs` - Sync certificate configurations between systems
+                - `rules` - Sync firewall rule configurations between systems
+                - `schedules` - Sync firewall schedule configurations between systems
+                - `alises` - Sync firewall alias configurations between systems
+                - `nat` - Sync NAT configurations between systems
+                - `ipsec` - Sync IPsec configurations between systems
+                - `openvpn` - Sync OpenVPN configurations between systems
+                - `dhcpd` - Sync DHCP configurations between systems
+                - `wol` - Sync Wake-on-LAN configurations between systems
+                - `staticroutes` - Sync static route configurations between systems
+                - `lb` - Sync load balancer configurations between systems
+                - `virtualip` - Sync virtual IP configurations between systems
+                - `trafficshaper` - Sync traffic shaper configurations between systems
+                - `trafficshaperlimiter` - Sync traffic shaper limiter configurations between systems
+                - `dnsforwarder` - Sync DNS Resolver and DNS Forwarder configurations between systems
+                - `captiveportal` - Sync captive portal configurations between systems
 
 - `--read-users`: Reads current local user database
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-users <argument>`
