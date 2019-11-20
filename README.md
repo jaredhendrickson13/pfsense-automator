@@ -17,18 +17,18 @@ Supported pfSense builds: 2.3.x*, 2.4.x, 2.5.x<br>
 Installation
 ------------
 pfsense-automator is distributed with all dependencies included. It is recommended that you use the included `pfa_installer` executable to ensure all dependencies are moved to the correct location and symlinks are properly created. To install `pfsense-automator` run the following commands<br>
-
+***
 **Extract**<br>
 Extract the program folder from the .tar.gz file _Note: Windows systems may need additional software to extract .tar.gz files_
 - `tar xvzf <downloaded tar.gz file path>`
-
+***
 **Run the Installer**<br>
 Locate the extracted folder, this should be titled `pfsense-automator`. Execute the installer `pfa_installer` in this folder 
 - macOS: `./pfa_installer`
 - Ubuntu: `sudo ./pfa_installer`
 - FreeBSD: `sudo ./pfa_installer`
 - Windows `pfa_install.exe` _Note: you must start command prompt as administrator_
-
+***
 **Uninstall**<br>
 If you need to uninstall `pfsense-automator` for any reason, you can do so easily using the same `pfa_installer` executable
 - macOS: `/usr/local/share/pfsense-automator/pfa_installer uninstall`
@@ -63,13 +63,13 @@ Commands
     - **Arguments**:
         - `-u <username>` : Allows you to pass in the username in the command, leave blank for interactive entry
         - `-p <password>` : Allows you to pass in a password in the command, leave blank for interactive entry
-
+***
 - `--check-version` : Checks the current installed version of pfSense on the target server. _Note: you must have the version data enabled in /widgets/widgets/system_information.widget.php_
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --check-version -u <username> -p <password>` 
     - **Arguments**:
         - `-u <username>` : Allows you to pass in the username in the command, leave blank for interactive entry
         - `-p <password>` : Allows you to pass in a password in the command, leave blank for interactive entry
-
+***
 - `--read-interfaces` : Reads the current interface configuration _Note: at this time, only IPv4 configurations are available for command line display. If you require IPv6 configurations, please use the `--json` argument. This will contain the IPv6 data_
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-interfaces <argument>`
     - **Arguments**:
@@ -80,10 +80,10 @@ Commands
         - `--cidr=<cidr_expr>` (`-c`) : Return only interfaces whose CIDR starts with a specified expression (e.g. `--cidr=127.0.0.1`) 
         - `--read-json` (`-rf`) : Prints interface data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports interface data to a JSON file given an existing directory
-        
+***
 -  `--read-available-interfaces` : Prints interfaces that are available but unused by pfSense
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-available-interfaces`
-
+***
 - `--add-vlan` : Attempts to add a new VLAN tag to a specified interface
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-vlan <iface> <vlan_id> <priority> <descr>`
     - **Arguments**:
@@ -91,7 +91,7 @@ Commands
         - `<vlan_id>` : Specify what VLAN ID to tag the interface as (1-4094)
         - `<priority>` : Specify the VLAN priority value for QoS purposes (0-7). Use `default` for no value.
         - `<descr>` : Specify a description for the VLAN. Use `default` to add the username and local hostname of individual running the command
-
+***
 - `--read-vlans` : Attempts to read current configured VLANs
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-vlans <argument>`
     - **Arguments**:
@@ -100,7 +100,7 @@ Commands
         - `--iface=<iface_id>` (`-i`) : Return only VLANs configured on a specific interface 
         - `--read-json` (`-rf`) : Prints VLAN data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports VLAN data to a JSON file given an existing directory
-
+***
 - `--read-general-setup` : Reads current General Setup settings from /system.php
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-general-setup <argument>`
     - **Arguments**:
@@ -111,13 +111,13 @@ Commands
         - `--webconfigurator` (`-wc`) : Return only configuration from the webConfigurator section of /system.php
         - `--read-json` (`-rf`) : Prints General Setup data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports General Setup data to a JSON file given an existing directory
-
+***
 - `--set-system-hostname` : Sets pfSense's system hostname values. _Note: proceed with caution if you have __DNS rebind checks enabled__! Either use the IP address to connect, or ensure that pfSense is able to resolve the new system hostname back to it's own IP address before changing the hostname_
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --set-system-hostname <hostname> <domain>`
     - **Arguments**:
         - `<hostname>` : Specify a host portion for the system (e.g __hostname__.domain.com)
         - `<domain>` : Specify a domain the domain portion for the system (e.g hostname.__domain.com__)
-
+***
 - `--read-adv-admin` : Reads current Advanced Admin settings from /system_advanced_admin.php
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-adv-admin <argument>`
     - **Arguments**:
@@ -129,7 +129,7 @@ Commands
         - `--console-options` (`-co`) : Return only configuration from the Console options section of /system_advanced_admin.php
         - `--read-json` (`-rf`) : Prints Advanced Admin data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports Advanced Admin data to a JSON file given an existing directory
-
+***
 - `--read-hasync` : Gathers the current High Availability configuration from system_hasync.php and prints it to your command line or exports as JSON
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-hasync <argument>`
     - **Arguments**:
@@ -138,7 +138,7 @@ Commands
         - `--xmlrpc` (`-x`) : Returns only XMLRPC configuration
         - `--read-json` (`-rf`) : Prints HA Sync data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports HA Sync data to a JSON file given an existing directory    
-        
+***
 - `--setup-hasync` : Configures HA Sync settings _Note: Ensure both pfSense systems are running the same pfSense version. It is recommended to have a dedicated interface for PFSYNC if enabled_
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-hasync <pfsync_enable> <pfsync_if> <pfsync_ip <xmlrpc_ip> <xmlrpc_user> <xmlrpc_passwd> <xmlrpc_opts>`
     - **Arguments**:
@@ -168,7 +168,7 @@ Commands
             - `trafficshaperlimiter` - Sync traffic shaper limiter configurations between systems
             - `dnsforwarder` - Sync DNS Resolver and DNS Forwarder configurations between systems
             - `captiveportal` - Sync captive portal configurations between systems
-
+***
 - `--read-users`: Reads current local user database
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-users <argument>`
     - **Arguments**:
@@ -176,7 +176,7 @@ Commands
         - `--username` (`-un`) : Return only configuration for a single user (e.g. `--username=admin`)
         - `--read-json` (`-rf`) : Prints user data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports user data to a JSON file given an existing directory
-
+***
 - `--setup-wc` : Configures pfSense webConfigurator's advanced options. This excludes the webConfigurator protocol and port number as they cannot be changed statefully. See `--set-wc-port` below. 
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-wc <max_procs> <http_redirect> <hsts> <login_autocomplete> <login_msg> <anti_lockout> <dns_rebind> <alt_hostnames> <http_referer> <tab_text>`
     - **Arguments**:
@@ -218,7 +218,7 @@ Commands
             - `display-tabtext` (`enable`) - Enables displaying of hostname in tab text
             - `hide-tabtext` (`disable`) - Disables displaying of hostname in tab text
             - `default` - Retains the current configured value
-
+***
 - `--set-wc-port` - Configures the webConfigurator's HTTP protocol and TCP port specification
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --set-wc-port <http_protocol> <tcp_port>`
     - **Arguments**:
@@ -229,7 +229,7 @@ Commands
         - `<tcp_port>` - Specify which TCP port the webConfigurator will bind to
             - `1-65535` - Assigns a specified TCP port value between 1-65535
             - `default` - Retains the current configured value
-
+***
 - `--setup-ssh` : Configures `sshd` on pfSense
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-ssh <enable_ssh> <ssh_port> <ssh_auth> <sshagent_forwarding>`
     - **Arguments**:
@@ -248,14 +248,14 @@ Commands
                 - `enable` - Enables ssh-agent forwarding
                 - `disable` - Disables ssh-agent forwarding
                 - `default` - Retains existing value (empty input in interactive mode assumes `default`)
-
+***
 - `--setup-console` - Configures console options found in system_advanced_admin.php
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-console <console_pass_protect>`
     - **Arguments**:
       - `<console_pass_protect>` - Enable or disables console password protection
         - `enable` - Enables console password protection
         - `disable` - Disables console password protection
-
+***
 - `--read-arp` : Reads the ARP table
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-arp <argument>`
     - **Arguments**:
@@ -268,7 +268,7 @@ Commands
         - `--link` (`-l`) : Return only ARP entries with a specific link type(e.g. `--link=ethernet`)
         - `--read-json` (`-rf`) : Prints ARP data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports ARP data to a JSON file given an existing directory
-
+***
 - `--read-xml` : Reads or exports XML configuration
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-xml <filter> <xml_area> <pkg> <rrd> <encrypt> <encrypt_pass>`
     - **Arguments**:
@@ -280,7 +280,7 @@ Commands
       - `<rrd>` : Include or exclude RRD data in the XML configuration (`include`, `exclude`)
       - `<encrypt>` : Enable or disable encrypting the XML data (`encrypt`, `noencrypt`)
       - `<encrypt_pass>` : Assign an encryption password if encryption is enabled, otherwise specify `none`
-
+***
 - `--upload-xml` : Restore configuration using an existing XML configuration file
   - **Syntax**: `pfsense-automator <pfSense IP or hostname> --upload-xml <xml_area> <xml_filepath> <decrypt_pass>`
   - **Arguments**:
@@ -311,7 +311,7 @@ Commands
             - `wol`: Restore Wake-On-LAN configuration only
       - `<xml_filepath>`: Specify a valid file path to the existing XML configuration file
       - `<decrypt_pass>`: Specify the decryption password for encrypted XML configurations, if not encrypted use `none`
-
+***
 - `--replicate-xml` : Replicate XML configurations to one or more pfSense systems. This replicates the XML configuration from the `<pfSense IP or hostname>` to the `<replication_targets>` shown in the syntax secion below. _Note: credentials, protocol, and port on all pfSense servers must match to replicate configuration_
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --replicate-xml <xml_area> <replication_targets>`
     - **Arguments**:
@@ -341,21 +341,21 @@ Commands
             - `vlans`: Replicate VLAN configurations only
             - `wol`: Replicate Wake-On-LAN configuration only
         - `<replication_targets>` : Specify hostname/IPs of pfSense systems to replicate the configuration to (multiple entries must be comma separated or added interactively)
-
+***
 - `--add-tunable` : Adds a new system tunable to System > Advanced > System Tunables
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-tunable <tunable_name> <descr> <value>`
     - **Arguments**:
         - `<tunable_name>` : Specify the tunable name, this should correspond with a valid system tunable
         - `<descr>` : Add a description for the system tunable
         - `<value>` : Specify the tunable's value. This is typically a integer value
-   
+***
 - `--read-tunables` : Reads the system tunables from System > Advanced > System Tunables
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-tunables <argument>`
     - **Arguments**:
         - `--all` (`-a`, `-d`, `default`) : Return all available ARP table values 
         - `--read-json` (`-rf`) : Prints tunable data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports system tunables data to a JSON file given an existing directory
-        
+***
 - `--add-dns` : Attempts to add a DNS entry to Unbound (DNS Resolver). This will not overwrite existing DNS entries
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-dns <subdomain> <primary_domain> <IP> <description>`
     - **Arguments**: 
@@ -364,7 +364,7 @@ Commands
         - `<IP>` : Specify the IPv4 address that the record will resolve to 
         - `<description>` : Add a custom description to the DNS entry
             - `default` : Adds a default description that includes the users username and hostname 
-
+***
 - `--read-dns` : Attempts to read current DNS Resolver (Unbound) entries
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-dns <argument>`
     - **Arguments**:
@@ -373,14 +373,14 @@ Commands
         - `--host=<FQDN>` (beta) : Return only one entry given exact FQDN. If an alias matches the FQDN, the parent entry is printed             
         - `--read-json` (`-rf`) : Prints DNS Resolver data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports Resolver data to a JSON file given an existing directory
-
+***
 - `--add-sslcert` : Attempts to add a new external certificate to pfSense's Certificate Manager
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-sslcert <cert_file_path> <key_file_path> <cert_name>`
     - **Arguments**:
         - `<cert_file_path>` : Specify a file path to the certificate file
         - `<key_file_path>` : Specify a file path to the key file
         - `<cert_name>` : Specify the descriptive name of the certificate to display in the Certificate Manager
-
+***
 - `--read-sslcerts` : Attempts to read existing certificates in pfSense's certifiate manager
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-sslcerts <verbosity>`
     - **Arguments**:
@@ -389,12 +389,12 @@ Commands
             - `default` : Includes base info
             - `--read-json` (`-rf`) : Prints SSL certificate data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
             - `--json=<directory_path>` : Exports SSL certificate data to a JSON file given an existing directory
-
+***
 - `--set-wc-sslcert` : Sets the SSL certificate that the WebConfigurator will use
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --set-wc-sslcert <cert_name>`
     - **Arguments**:
         - `<cert_name>` : Specify which certificate to use by it's certificate name. This much match exactly as it shows in the Certificate Manager. If multiple certificates match the same name, an error is thrown.
-
+***
 - `--read-aliases` : Attempts to read current firewall aliases (only supports host, network and port aliases)
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-aliases <argument>`
     - **Arguments**:
@@ -402,7 +402,7 @@ Commands
         - `--name=<alias_name>` (`-n`) : Return only one alias given a valid alias name
         - `--read-json` (`-rf`) : Prints alias data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports alias data to a JSON file given an existing directory
-
+***
 - `--read-virtual-ips` : Reads our configured virtual IPs from firewall_virtual_ip.php
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-virtual-ips <argument>`
     - **Arguments**:
@@ -412,7 +412,7 @@ Commands
         - `--subnet` (`-s`) : Return virtual IPs matching a subnet expression (e.g. `--subnet=127.0.0.1/32`) _Note: this filter matches entries that start with your expression, the more specific your expression the more specific your results will be_
         - `--read-json` (`-rf`) : Prints virtual IP data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports virtual IP data to a JSON file given an existing directory
-
+***
 - `--add-virtual-ip` : Adds a new virtual IP to firewall_virtual_ip.php
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-virtual-ip <type> <interface> <cidr> <disable_expand> <vhid_group> <adv_base> <adv_skew> <descr>`
     - **Arguments**:
@@ -424,7 +424,7 @@ Commands
         - `<adv_base>` : Specify the advertising frequency base (`1-254`) _Note: this is only necessary on `carp` virtual IPs, leave as `1` on other virtual IP types_
         - `<adv_skew>` : Specify the advertising frequency skew (`0-254`) _Note: this is only necessary on `carp` virtual IPs, leave as `0` on other virtual IP types_
         - `<descr>` : Specify a description for your virtual IP
-
+***
 - `--read-carp-status` : Checks our CARP status
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-virtual-ips <argument>`
     - **Arguments**:
@@ -434,18 +434,18 @@ Commands
         - `--subnet` (`-s`) : Return virtual IPs matching a subnet expression (e.g. `--subnet=127.0.0.1/32`) _Note: this filter matches entries that start with your expression, the more specific your expression the more specific your results will be_
         - `--read-json` (`-rf`) : Prints CARP status data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports virtual IP data to a JSON file given an existing directory
-
+***
 - `--set-carp-maintenance`: Enables or disables CARP persistent maintenance mode. _Note: Enabling maintenance mode on the MASTER node is not recommended, command timeouts are likely to occur if you are enabling maintenance on the MASTER node_
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --set-carp-maintenance <toggle>`
     - **Arguments**:
     - `<toggle>` : Specify whether to enable or disable CARP maintenance mode (`enable`,`disable`)
-
+***
 - `--modify-alias` : Modifies an existing Firewall Alias. Existing entries will be overwritten. 
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --modify-alias <alias name> <IPs or hostnames>`
     - **Arguments**:
         - `<alias name>` : Specify which alias you would like to modify, this much match the name exactly
         - `<IPs or hostnames>` : Specify what IPs or hostnames to include in the alias. Multiple entries must be separated by a comma
-
+***
 - `--add-ldapserver` : Adds a new LDAP authentication server - this may be configured inline or interactively (will prompt for configuration if missing arguments)
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-ldapserver <descr_name> <IP or hostname> <port> <transport> <protocol> <timeout> <search_scope> <base_dn> <auth_container> <ext_query> <query> <bind_anon> <bind_dn> <bind_pw> <template> <user_attr> <group_attr> <member_attr> <rfc2307> <group_obj> <encode> <user_alt> -u <username> -p <password>`
     - **Arguments**:
