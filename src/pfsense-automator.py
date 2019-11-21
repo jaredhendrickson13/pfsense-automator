@@ -76,7 +76,8 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_host" : "Error: Invalid hostname. Expected syntax: `pfsense-automator <HOSTNAME or IP> <COMMAND> <ARGS>`",
             "timeout" : "Error: Connection timeout",
             "connection" : "Error: Connection dropped by remote host",
-            "version" : "pfsense-automator " + softwareVersion
+            "version" : "pfsense-automator " + softwareVersion,
+            "syntax" : "pfsense-automator <HOSTNAME or IP> <COMMAND> <ARGS>"
         },
         # Error/success messages for --check-auth flag
         "--check-auth": {
@@ -505,6 +506,25 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_user" : "Error: Invalid XMLRPC username `" + data1 + "`",
             "invalid_passwd" : "Error: Invalid XMLRPC password length",
             "descr": structure_whitespace("  --setup-hasync", cmdFlgLen, " ", True) + " : Configure HA Sync",
+        },
+        # Error/success messages for --setup-hapfsense
+        "--setup-hapfsense" : {
+            0 : "Successfully configured HA pfSense",
+            2 : "Error: Unexpected error configuring HA pfSense",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            12: "Error: pfSense version mismatch. MASTER on pfSense " + data1 + ", BACKUP on pfSense " + data2,
+            13: "Error: Unable to add CARP virtual IPs to MASTER node",
+            14: "Error: Unable to configure HA Sync on MASTER node",
+            15: globalPermissionErrMsg,
+            "invalid_backup_ip" : "Error: Invalid BACKUP node IP `" + data1 + "`",
+            "invalid_master_if" : "Error: Unknown interface `" + data1 + "` on MASTER node `" + server + "`",
+            "invalid_backup_if" : "Error: Unknown interface `" + data1 + "` on BACKUP node `" + data2 + "`",
+            "invalid_carp_ip" : "Error: Invalid CARP virtual IP `" + data1 + "`",
+            "invalid_pfsync_if" : "Error: Unknown PFSYNC interface `" + data1 + "`",
+            "invalid_pfsync_ip" : "Error: Invalid PFSYNC IP address `" + data1 + "`",
+            "descr": structure_whitespace("  --setup-hapfsense", cmdFlgLen, " ", True) + " : Configure pfSense to run in full High Availability",
         },
         # Error/success messages for --read-carp-status
         "--read-carp-status" : {
@@ -2881,6 +2901,8 @@ def get_virtual_ips(server, user, key):
         if check_permissions(getVirtIpIds) and check_permissions(getVirtIpEdit):
             # Parse our HTML output to capture the ID of each virtual IP
             if "<tbody>" in getVirtIpIds["text"]:
+                # Return our success exit code
+                virtIps["ec"] = 0
                 virtIpIdTableBody = getVirtIpIds["text"].split("<tbody>")[1].split("</tbody>")[0]    # Capture all data between our tbody tags
                 virtualIpIdTableRows = virtIpIdTableBody.split("<tr>")[1:]    # Split our table body into list of rows indicated by the tr tag (remove first entry)
                 # Loop through each of our rows and pull the virtual IPs ID
@@ -2963,8 +2985,6 @@ def get_virtual_ips(server, user, key):
                         # If no tag was found return default
                         else:
                             virtIps["virtual_ips"][virtIpId]["descr"] = ""
-                        # Return our success exit code
-                        virtIps["ec"] = 0
                     # Break the loop and return error if ID is not valid. This indiciates that we incorrectly parse the output (or their version of pfSense is unsupported)
                     else:
                         virtIps["ec"] = 2    # Return error exit code
@@ -3131,10 +3151,59 @@ def set_carp_maintenance(server, user, key, enable):
     # Return our exit code
     return mmAdded
 
-# set_carp() either enables or disables CARP temporarily
+# setup_hapfsense() automates the process needed to run pfSense in full high availability
+def setup_hapfsense(server, user, key, backupNode, carpIfs, carpIps, carpPasswd, pfsyncIf, pfsyncIp):
+    # Local variables
+    haActive = 2  # Initialize our function return code (default 2 as error encountered)
+    getMasterVer = get_pfsense_version(server, user, key)    # Get the pfSense version of our master node
+    getBackupVer = get_pfsense_version(backupNode, user, key)    # Get the pfSense version of our backup node
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)  # Populate our base URL
+    allSyncOpts = {"synchronizeusers": "on", "synchronizeauthservers": "on", "synchronizecerts": "on",
+                     "synchronizerules": "on", "synchronizeschedules": "on", "synchronizealiases": "on",
+                     "synchronizenat": "on", "synchronizeipsec": "on", "synchronizeopenvpn": "on",
+                     "synchronizedhcpd": "on", "synchronizewol": "on", "synchronizestaticroutes": "on",
+                     "synchronizelb": "on", "synchronizevirtualip": "on", "synchronizetrafficshaper": "on",
+                     "synchronizetrafficshaperlimiter": "on", "synchronizednsforwarder": "on",
+                     "synchronizecaptiveportal": "on"}
+    # Check that we were able to check our pfSense version on our master and backup nodes
+    if getMasterVer["ec"] == 0:
+        if getBackupVer["ec"] == 0:
+            # Check if our pfSense versions match
+            if getMasterVer["version"]["installed_version"] == getBackupVer["version"]["installed_version"]:
+                # Add our CARP interfaces to MASTER
+                counter = 0    # Start a loop counter to track our loop iteration
+                vipFailed = False    # Track whether we encountered an error during our CARP additions
+                for i in carpIps:
+                    cVip = add_virtual_ip(server, user, key, "carp", carpIfs[counter], i, "32", "", carpPasswd, "auto", "0", "1", "HA PFSENSE IP: Auto-added by pfsense-automator")
+                    # Check if we failed to add the CARP address
+                    if cVip != 0:
+                        haActive = 13
+                        vipFailed = True
+                        break
+                    counter = counter + 1    # Increase our counter
+                # Check if we added all CARP addresses successfully
+                if not vipFailed:
+                    # Add our HA SYNC configuration to sync the CARP interfaces to the backup node
+                    masterSync = setup_hasync(server, user, key, "on", pfsyncIf, pfsyncIp, backupNode, user, key, allSyncOpts)
+                    # Check that HA SYNC was successfully configured
+                    if masterSync == 0:
+                        haActive = 0   # Assign return code 0 (success)
+                    # If HA SYNC failed
+                    else:
+                        haActive = 14
+            # If our version do not match exactly, return error
+            else:
+                haActive = 12    # Return code 13 (versions do not match)
+        # If we could not pull our pfSense version on our backup node, return the get_pfsense_version()'s return code
+        else:
+            haActive = getBackupVer["ec"]
+    # If we could not pull our pfSense version on our master node, return the get_pfsense_version()'s return code
+    else:
+        haActive = getMasterVer["ec"]
+    # Return our exit code
+    return haActive
 
 # main() is the primary function that maps arguments to other functions
-# noinspection SyntaxError
 def main():
     # Local Variables
     global wcProtocol    # Make wcProtocol modifiable globally
@@ -4314,7 +4383,7 @@ def main():
                                  "synchronizelb": "", "synchronizevirtualip": "", "synchronizetrafficshaper": "",
                                  "synchronizetrafficshaperlimiter": "", "synchronizednsforwarder": "",
                                  "synchronizecaptiveportal": ""}
-                enablePfsync = filter_input(thirdArg) if len(sys.argv) > 3 else input("Enable PFSYNC [enable,disable]: ")    # Enable/disable pfsync input
+                enablePfsync = filter_input(thirdArg) if len(sys.argv) > 3 else input("Enable PFSYNC [enable,disable,default]: ")    # Enable/disable pfsync input
                 pfsyncIf = filter_input(fourthArg) if len(sys.argv) > 4 else input("PFSYNC interface: ")    # Assign our pfsync interface input
                 pfsyncIp = filter_input(fifthArg) if len(sys.argv) > 5 else input("PFSYNC Peer IP: ")    # Assign our pfsync peer IP input
                 pfsyncIp = "" if pfsyncIp.lower() == "none" else pfsyncIp    # Allow input none as blank string
@@ -4398,6 +4467,89 @@ def main():
                 # If our enable pfsync argument is invalid
                 else:
                     print(get_exit_message("invalid_enable",pfsenseServer,pfsenseAction,enablePfsync,""))    # Print error msg
+                    sys.exit(1)
+
+            # Assign functions/processes for --setup-ha-pfsense
+            elif pfsenseAction == "--setup-hapfsense":
+                # Action variables
+                backupNode = filter_input(thirdArg) if len(sys.argv) > 3 else input("Backup node IP: ")    # Save user input for our backup node's IP address
+                carpIfsRaw = fourthArg + "," if len(sys.argv) > 4 else None    # Save user input for carp interfaces if passed inline, otherwise indicate None for interactive mode
+                carpIpsRaw = fifthArg + "," if len(sys.argv) > 5 else None    # Save user input for carp IPs if passed inline, otherwise indicate None for interactive mode
+                # Format our CARP interfaces and IPs into lists
+                carpIfs = list(filter(None, carpIfsRaw.split(","))) if carpIfsRaw is not None else []
+                carpIps = list(filter(None, carpIpsRaw.split(","))) if carpIpsRaw is not None else []
+                # Get our CARP interfaces if interactive mode
+                if carpIfsRaw is None:
+                    while True:
+                        ifInput = input("Enter interface to include in HA [blank entry if done]: ").replace(" ","")
+                        # Check if input is empty, break if so
+                        if ifInput == "":
+                            break
+                        # Add our input to our interface list otherwise
+                        else:
+                            carpIfs.append(ifInput)
+                # Get our CARP interfaces if interactive mode
+                if carpIpsRaw is None:
+                    for i in carpIfs:
+                        while True:
+                            ipInput = input("Enter available IP address on `" + i + "`: ")    # Prompt user to input IP
+                            # Check that the IP is valid
+                            if validate_ip(ipInput):
+                                carpIps.append(ipInput)    # Append the IP to our list
+                                break    # Break our loop to move to the next item
+                            else:
+                                print("Invalid IP `" + ipInput + "`")
+                carpPasswd = sixthArg if len(sys.argv) > 6 else getpass.getpass("CARP password: ")    # Save our user input for CARP password or prompt user for input
+                pfsyncIf = seventhArg if len(sys.argv) > 7 else input("PFSYNC interface: ")    # Save our PFSYNC interface input or prompt user for input if missing
+                pfsyncIp = eighthArg if len(sys.argv) > 8 else input("PFSYNC Peer IP: ")    # Save our PFSYNC IP input or prompt user for input if missing
+                user = tenthArg if ninthArg == "-u" and tenthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = twelfthArg if eleventhArg == "-p" and twelfthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # INPUT VALIDATION
+                # Check if our backup node is valid and reachable
+                if check_remote_port(backupNode, wcProtocolPort):
+                    # Check that our HA synced interfaces exist on both MASTER and BACKUP
+                    finalCarpIfs = []    # Initialize our final interface list containing the pf ID values
+                    for c in carpIfs:
+                        pfId = find_interface_pfid(pfsenseServer, user, key, c, None)    # Find our pfID for this interface on MASTER
+                        pfIdBackup = find_interface_pfid(backupNode, user, key, c, None)    # Find our pfID for this interface on BACKUP
+                        # Check if our interface exists on MASTER
+                        if pfId["pf_id"] != "" and pfId["pf_id"] == pfIdBackup["pf_id"]:
+                            # Check if our interface exists on BACKUP
+                            if pfIdBackup["pf_id"] != "" and pfId["pf_id"] == pfIdBackup["pf_id"]:
+                                finalCarpIfs.append(pfId["pf_id"])    # Add our PFID to the list
+                            else:
+                                print(get_exit_message("invalid_backup_if", pfsenseServer, pfsenseAction, i, backupNode))
+                                sys.exit(1)
+                        else:
+                            print(get_exit_message("invalid_master_if",pfsenseServer,pfsenseAction,i,""))
+                            sys.exit(1)
+                    # Check that each of our IPs are valid
+                    for ip in carpIps:
+                        # Print error message and exit on non zero if invalid IP
+                        if not validate_ip(ip):
+                            print(get_exit_message("invalid_carp_ip",pfsenseServer,pfsenseAction,ip,""))
+                            sys.exit(1)
+                    # Check that our PFSYNC interface exists
+                    checkPfsyncIf = find_interface_pfid(pfsenseServer, user, key, pfsyncIf, None)
+                    if checkPfsyncIf["pf_id"] != "":
+                        pfsyncIf = checkPfsyncIf["pf_id"]
+                        # Check if our PFSYNC IP is valid
+                        if validate_ip(pfsyncIp):
+                            # Run our setup function, display our return message and exit on return code
+                            setupHaPfsense = setup_hapfsense(pfsenseServer, user, key, backupNode, finalCarpIfs, carpIps, carpPasswd, pfsyncIf, pfsyncIp)
+                            print(get_exit_message(setupHaPfsense, pfsenseServer, pfsenseAction, "", ""))
+                            sys.exit(setupHaPfsense)
+                        # If our PFSYNC IP is invalid, print error message and exit on non zero
+                        else:
+                            print(get_exit_message("invalid_pfsync_ip",pfsenseServer,pfsenseAction,pfsyncIp,""))
+                            sys.exit(1)
+                    # If our PFSYNC interface does not exist
+                    else:
+                        print(get_exit_message("invalid_pfsync_if",pfsenseServer,pfsenseAction,pfsyncIf,""))
+                        sys.exit(1)
+                # If we could not communicate with our backup node, print error and exit on non-zero
+                else:
+                    print(get_exit_message("invalid_backup_ip",pfsenseServer,pfsenseAction,backupNode,""))
                     sys.exit(1)
 
             # Assign functions/processes for --read-xml
@@ -4578,7 +4730,7 @@ def main():
                             infoHeader = structure_whitespace("INFO", 60, "-", True) + " "   # Format our INFO header
                             print(hostHeader + statusHeader + infoHeader)    # Format our header
                             # Loop through our target result and print them
-                            for list,item in replicationEc["targets"].items():
+                            for lists,item in replicationEc["targets"].items():
                                 hostData = structure_whitespace(item["host"], 30, " ", True) + " "    # Format our HOST data
                                 statusData = structure_whitespace(statusDict[item["ec"]]["status"], 8, " ", True) + " "    # Format our STATUS data
                                 infoData = structure_whitespace(statusDict[item["ec"]]["reason"], 60, " ", True) + " "    # Format our INFO data
@@ -5255,6 +5407,18 @@ def main():
             sys.exit(1)
     # If user did not pass in a hostname or IP
     else:
+        print("pfsense-automator " + softwareVersion)
+        print("SYNTAX:")
+        print("  " + get_exit_message("syntax","","generic","",""))
+        flagDescrs = ""    # Initialize our flag description help string
+        flagDict = get_exit_message("",pfsenseServer,"all","","")    # Pull our descr dictionary
+        # Loop through our flag descriptions and save them to a string
+        for key,value in flagDict.items():
+            # Only perform this on dict keys with -- flags
+            if key.startswith("--"):
+                flagDescrs = flagDescrs + value["descr"] + "\n"   # Format our return string
+        print("COMMANDS:")
+        print(flagDescrs.rstrip("/"))
         # Print our error and exit
         print(get_exit_message("invalid_host", "", "generic", "", ""))
         sys.exit(1)

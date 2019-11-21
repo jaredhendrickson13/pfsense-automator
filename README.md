@@ -169,6 +169,16 @@ Commands
             - `dnsforwarder` - Sync DNS Resolver and DNS Forwarder configurations between systems
             - `captiveportal` - Sync captive portal configurations between systems
 ***
+- `--setup-hapfsense` : Configures full HA pfSense. Automating the processes of `--add-virtual-ip` and `--setup-hasync` _Notes: Both MASTER and BACKUP nodes must be on the same pfSense version or an error is thrown, both MASTER and BACKUP nodes must utilize the same webConfigurator credentials, protocol and port, by default all XMLRPC sync options are enabled_
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-hapfsense <backup_node_ip> <ha_interfaces> <ha_ips> <carp_passwd> <pfsync_interface> <pfsync_ip>`
+    - **Arguments**:
+        - `<backup_node_ip>` - Specify the IP of the node that will assume the BACKUP node status _Note: the target server IP/hostname will assume the MASTER node status_
+        - `<ha_interfaces>` - Specify the interface(s) (seperated by comma if multiple) to include the HA configuration _Notes: interfaces must be configured on both hosts beforehand, you may use the physical interface ID, the pfSense interface ID, or the descriptive name of the interface. If your MASTER and BACKUP systems do not utilize the same NICs, ensure the pfSense ID or descriptive name of those interfaces are the same use that value instead_
+        - `<ha_ips>` - Specify available IPs on each interface, these will be consumed as CARP virtual IPs shared across both nodes _Note: If inline syntax mode is used, these must be specified in the same order as the `<ha_interfaces>` were entered previously. Each node's shared interface(s) must have an IP (but not the same IP!) within the same subnet._ 
+        - `<carp_passwd>` -  Specify the CARP password used when creating CARP virtual IPs _Note: This will use the same password for each IP listed in `<ha_ips>`_
+        - `<pfsync_interface>` -  Specify the interface to be used by PFSYNC, in most cases this should be a dedicated interface that is directly connected to each node
+        - `<pfsync_ip>` -  Specify the IP PFSYNC will peer to when syncing the states table _Note: this must be BACKUP nodes IP address that is within the subnet hosted by the interfaces specified in `<pfsync_interface>`_
+***
 - `--read-users`: Reads current local user database
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-users <argument>`
     - **Arguments**:
