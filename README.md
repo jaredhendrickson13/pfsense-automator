@@ -187,6 +187,32 @@ Commands
         - `--read-json` (`-rf`) : Prints user data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports user data to a JSON file given an existing directory
 ***
+- `--add-user`: Add a new user to pfSense's webConfigurator
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-users <new_username> <enable> <passwd> <full_name> <exp_date> <groups>`
+    - **Arguments**:
+        - `<new_username>`  : Specify the desired username for the new user
+        - `<enable>`: Specify whether you would like this user to be enabled or disabled after creation (`enable`,`disable`)
+        - `<passwd>`: Specify the password for the new user
+        - `<full_name>` : Enter a full name or descriptive name for the new user. Enter `none` for no full/descriptive name
+        - `<exp_date>`: Specify an expiration date for the new user's account. Enter `none` for no expiration
+        - `<groups>`: Specify which groups to add the user to. Multiple group entries must be comma seperated, enter `none` for no group membership
+***
+- `--change-user-passwd`: Change an existing user's password 
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --change-user-passwd <username> <passwd>`
+    - **Arguments**:
+        - `<new_username>`  : Specify the user whose password is to be changed
+        - `<passwd>`: Specify the new password for the user _Note: if running via interactive mode, you will be required to confirm the password entry as it is masked during input_
+***
+- `--add-user-key`: Add a SSH or IPsec key to an existing user's account
+    - **Syntax**:
+        -`pfsense-automator <pfSense IP or hostname> --add-user-key <username> ssh <key_path> <key_override>`
+        -`pfsense-automator <pfSense IP or hostname> --add-user-key <username> ipsec <pre_shared_key>` _Note: any existing IPsec keys will always be overwritten_
+    - **Arguments**:
+        - `<username>`  : Specify the username to add the key to
+        - `<key_path>`: Specify a file path to your SSH key _Note: only for `ssh` key entries_
+        - `<key_override>`: Choose whether existing keys will be overwritten or if the new key will be appended to the authorized keys (`yes`,`no` ) _Note: Only for `ssh` key entries. `yes` for override, `no` for append_
+        - `<pre_shared_key>` : Specify the IPsec pre-shared key to add _Note: only for `ipsec` key entries_
+***
 - `--setup-wc` : Configures pfSense webConfigurator's advanced options. This excludes the webConfigurator protocol and port number as they cannot be changed statefully. See `--set-wc-port` below. 
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-wc <max_procs> <http_redirect> <hsts> <login_autocomplete> <login_msg> <anti_lockout> <dns_rebind> <alt_hostnames> <http_referer> <tab_text>`
     - **Arguments**:

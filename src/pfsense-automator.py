@@ -267,6 +267,45 @@ def get_exit_message(ec, server, command, data1, data2):
             "export_fail": "Failed to export user data as JSON",
             "descr": structure_whitespace("  --read-users", cmdFlgLen, " ", True) + " : Read user data from System > User Manager > Users"
         },
+        # Error/success messages for --add-user
+        "--add-user": {
+            0: "Successfully added user `" + data1 + "` to " + server,
+            2: "Error: Unexpected error adding user",
+            3: globalAuthErrMsg,
+            4: "Error: Username `" + data1 + "` already exists",
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_enable": "Error: Invalid enable value `" + data1 + "`",
+            "invalid_date": "Error: Invalid expiration date `" + data1 + "`. This must be a future date in MM/DD/YYYY format",
+            "invalid_group": "Error: Group `" + data1 + "` does not exist",
+            "descr": structure_whitespace("  --add-user", cmdFlgLen, " ", True) + " : Add a new local webConfigurator user"
+        },
+        # Error/success messages for --add-user-key
+        "--add-user-key": {
+            0: "Successfully added " + data1 + " key to user `" + data2 + "`",
+            2: "Error: Unexpected error adding " + data1 + " key. Your key may be invalid",
+            3: globalAuthErrMsg,
+            4: "Error: Username `" + data2 + "` does not exist",
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_key_type": "Error: Invalid key type `" + data1 + "`. Expected `ssh` or `ipsec`",
+            "invalid_override": "Error: Invalid SSH key override specification `" + data1 + "` Expected `yes` or `no`",
+            "invalid_ssh_path": "Error: No SSH keyfile found at `" + data1 + "`",
+            "descr": structure_whitespace("  --add-user-key", cmdFlgLen, " ", True) + " : Add and IPsec or SSH key to an existing user"
+        },
+        # Error/success messages for --change-user-passwd
+        "--change-user-passwd": {
+            0: "Successfully changed password for user `" + data1 + "`",
+            2: "Error: Unexpected error changing user password",
+            3: globalAuthErrMsg,
+            4: "Error: Username `" + data1 + "` does not exist",
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "descr": structure_whitespace("  --change-user-passwd", cmdFlgLen, " ", True) + " : Change an existing user's password"
+        },
         # Error/success messages for -add-ldapserver
         "--add-ldapserver": {
             0: "Successfully added LDAP server `" + data1 + "` on `" + server + "`",
@@ -720,6 +759,33 @@ def validate_ip(ip):
     # Return boolean
     return validIP
 
+# validate_date_format() checks if a date string is in the format mm/dd/yyyy and is a future date
+def validate_date_format(dateStr):
+    # Local variables
+    dateValid = False    # Init our return value as false by default
+    dateNow = datetime.datetime.now()    # Create our time object to compare later
+    # Check if our date string is actually a string
+    if type(dateStr) is str:
+        # Check if we have the `/` character in our string
+        if "/" in dateStr:
+            dateList = dateStr.split("/")    # Split our string into a list so we can verify each date value
+            # Check that we have three items in the list
+            if len(dateList) == 3:
+                # Check that our month value is a digit
+                if dateList[0].isdigit() and dateList[1].isdigit() and dateList[2].isdigit():
+                    # Try to create a date object with these parameters
+                    try:
+                        futureDate = datetime.datetime(int(dateList[2]),int(dateList[0]),int(dateList[1]))
+                        dObjCreate = True
+                    except ValueError as x:
+                        dObjCreate = False
+                    # If our time object was successfully created, test if our dateStr is greater than the current time
+                    if dObjCreate:
+                        if futureDate > dateNow:
+                            dateValid = True
+    # Return our bool
+    return dateValid
+
 # check_remote_port tests if a remote port is open. This function will return True if the connection was successful.
 def check_remote_port(HOST,PORT):
     checkConnect = None    # Initialize checkConnect a variable to track connection statuses
@@ -1040,6 +1106,170 @@ def get_users(server, user, key):
         else:
             users["ec"] = 15    # Assign exit code 15 (permission denied)
     return users
+
+# add_user() creates a new webConfigurator user in system_usernamanger.php
+def add_user(server, user, key, uname, enable, passwd, fname, expDate, groups):
+    # Local variables
+    userAdded = 2    # Initialize our return code as 2 (error)
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)  # Assign our base URL
+    existUsers = get_users(server, user, key)    # Pull our existing user database
+    # Check that we successfully pulled our existing users
+    if existUsers["ec"] == 0:
+        # Check that our desired username does not already exist
+        if uname not in existUsers["users"]:
+            # Format our POST data dictionary
+            userPostData = {
+                "__csrf_magic": get_csrf_token(url + "/system_usermanager.php", "GET"),
+                "usernamefld": uname,
+                "disabled": enable,
+                "passwordfld1": passwd,
+                "passwordfld2": passwd,
+                "descr": fname,
+                "expires": expDate,
+                "groups[]": groups,
+                "utype": "user",
+                "webguicss": "pfSense.css",
+                "webguifixedmenu": "",
+                "webguihostnamemenu": "",
+                "dashboardcolumns": "2",
+                "authorizedkeys": "",
+                "ipsecpsk": "",
+                "act": "",
+                "userid": "",
+                "privid": "",
+                "certid": "",
+                "oldusername": "",
+                "save": "Save"
+            }
+            # Make our POST request
+            postNewUser = http_request(url + "/system_usermanager.php?act=new", userPostData, {}, {}, 45, "POST")
+            # Check if our user is now in our user database
+            updateExistUsers = get_users(server, user, key)
+            if uname in updateExistUsers["users"]:
+                userAdded = 0    # Return exit code 0 (success
+        # If our user already exists
+        else:
+            userAdded = 4    # Return exit code 4 (user already exists)
+    # If we encountered an error pulling our existing users, return the exit code of the get_users() function
+    else:
+        userAdded = existUsers["ec"]
+    # Return our exit code value
+    return userAdded
+
+# add_user_key() adds a new public key for either SSH or IPsec
+def add_user_key(server, user, key, uname, keyType, pubKey, destruct):
+    # Local variables
+    keyAdded = 2    # Init our return code as 2 (error)
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    existUsers = get_users(server, user, key)    # Pull our existing user configuration
+    # Check that we pulled our users successfully
+    if existUsers["ec"] == 0:
+        # Check if our user exists
+        if uname in existUsers["users"]:
+            uid = existUsers["users"][uname]["id"]    # Pull our user's pf ID
+            # Check if our key type is SSH
+            if keyType.lower() == "ssh":
+                pubKey = existUsers["users"][uname]["authorized_keys"] + "\n" + pubKey if not destruct else pubKey    # Check if user simply wants to append a new key or replace all keys
+            # Format our POST request data
+            keyPostData = {
+                "__csrf_magic": get_csrf_token(url + "/system_usermanager.php?act=edit&userid=" + uid, "GET"),
+                "act": "edit",
+                "usernamefld": uname,
+                "disabled": existUsers["users"][uname]["disabled"],
+                "descr": existUsers["users"][uname]["full_name"],
+                "expires": existUsers["users"][uname]["expiration"],
+                "groups[]":  existUsers["users"][uname]["groups"],
+                "utype":  existUsers["users"][uname]["type"],
+                "customsettings": existUsers["users"][uname]["custom_ui"],
+                "webguicss": existUsers["users"][uname]["custom_ui_config"]["webguicss"],
+                "webguifixedmenu": existUsers["users"][uname]["custom_ui_config"]["webguifixedmenu"],
+                "interfacessort": "yes" if existUsers["users"][uname]["custom_ui_config"]["interfacessort"] else "",
+                "dashboardavailablewidgetspanel": "yes" if existUsers["users"][uname]["custom_ui_config"]["dashboardavailablewidgetspanel"] else "",
+                "systemlogsfilterpanel": "yes" if existUsers["users"][uname]["custom_ui_config"]["systemlogsfilterpanel"] else "",
+                "systemlogsmanagelogpanel": "yes" if existUsers["users"][uname]["custom_ui_config"]["systemlogsmanagelogpanel"] else "",
+                "statusmonitoringsettingspanel": "yes" if existUsers["users"][uname]["custom_ui_config"]["statusmonitoringsettingspanel"] else "",
+                "webguileftcolumnhyper": "yes" if existUsers["users"][uname]["custom_ui_config"]["webguileftcolumnhyper"] else "",
+                "disablealiaspopupdetail": "yes" if existUsers["users"][uname]["custom_ui_config"]["disablealiaspopupdetail"] else "",
+                "pagenamefirst": "yes" if existUsers["users"][uname]["custom_ui_config"]["pagenamefirst"] else "",
+                "webguihostnamemenu": existUsers["users"][uname]["custom_ui_config"]["webguihostnamemenu"],
+                "dashboardcolumns": existUsers["users"][uname]["custom_ui_config"]["dashboardcolumns"],
+                "authorizedkeys":  pubKey if keyType.lower() == "ssh" else existUsers["users"][uname]["authorized_keys"],
+                "ipsecpsk":  pubKey if keyType.lower() == "ipsec" else existUsers["users"][uname]["ipsec_keys"],
+                "userid": uid,
+                "save": "Save"
+            }
+            # Make our POST request
+            keyPost = http_request(url + "/system_usermanager.php?act=edit&userid=" + uid, keyPostData, {}, {}, 45, "POST")
+            # Check that our keys are now updated
+            updateExistUsers = get_users(server, user, key)    # Update our user configuration
+            if updateExistUsers["ec"] == 0:
+                if keyType.lower() == "ssh":
+                    keyAdded = 0 if updateExistUsers["users"][uname]["authorized_keys"] == pubKey else keyAdded    # If our input matches our configuration, return 0 (success)
+                if keyType.lower() == "ipsec":
+                    keyAdded = 0 if updateExistUsers["users"][uname]["ipsec_keys"] == pubKey else keyAdded    # If our input matches our configuration, return 0 (success)
+        # If our user does not exist
+        else:
+            keyAdded = 4    # Return code 4 (user not found)
+    # If we could not pull our existing users, return the non-zero return code received from get_users()
+    else:
+        keyAdded = existUsers["ec"]
+    # Return our code
+    return keyAdded
+
+# change_user_passwd() changes an existing user's password
+def change_user_passwd(server, user, key, uname, passwd):
+    # Local variables
+    passwdChanged = 2    # Init our return code as 2 (error)
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    existUsers = get_users(server, user, key)    # Pull our existing user configuration
+    # Check that we pulled our users successfully
+    if existUsers["ec"] == 0:
+        # Check if our user exists
+        if uname in existUsers["users"]:
+            uid = existUsers["users"][uname]["id"]    # Pull our user's pf ID
+            # Format our POST request data
+            chPassData = {
+                "__csrf_magic": get_csrf_token(url + "/system_usermanager.php?act=edit&userid=" + uid, "GET"),
+                "act": "edit",
+                "passwordfld1": passwd,
+                "passwordfld2": passwd,
+                "usernamefld": uname,
+                "disabled": existUsers["users"][uname]["disabled"],
+                "descr": existUsers["users"][uname]["full_name"],
+                "expires": existUsers["users"][uname]["expiration"],
+                "groups[]":  existUsers["users"][uname]["groups"],
+                "utype":  existUsers["users"][uname]["type"],
+                "customsettings": existUsers["users"][uname]["custom_ui"],
+                "webguicss": existUsers["users"][uname]["custom_ui_config"]["webguicss"],
+                "webguifixedmenu": existUsers["users"][uname]["custom_ui_config"]["webguifixedmenu"],
+                "interfacessort": "yes" if existUsers["users"][uname]["custom_ui_config"]["interfacessort"] else "",
+                "dashboardavailablewidgetspanel": "yes" if existUsers["users"][uname]["custom_ui_config"]["dashboardavailablewidgetspanel"] else "",
+                "systemlogsfilterpanel": "yes" if existUsers["users"][uname]["custom_ui_config"]["systemlogsfilterpanel"] else "",
+                "systemlogsmanagelogpanel": "yes" if existUsers["users"][uname]["custom_ui_config"]["systemlogsmanagelogpanel"] else "",
+                "statusmonitoringsettingspanel": "yes" if existUsers["users"][uname]["custom_ui_config"]["statusmonitoringsettingspanel"] else "",
+                "webguileftcolumnhyper": "yes" if existUsers["users"][uname]["custom_ui_config"]["webguileftcolumnhyper"] else "",
+                "disablealiaspopupdetail": "yes" if existUsers["users"][uname]["custom_ui_config"]["disablealiaspopupdetail"] else "",
+                "pagenamefirst": "yes" if existUsers["users"][uname]["custom_ui_config"]["pagenamefirst"] else "",
+                "webguihostnamemenu": existUsers["users"][uname]["custom_ui_config"]["webguihostnamemenu"],
+                "dashboardcolumns": existUsers["users"][uname]["custom_ui_config"]["dashboardcolumns"],
+                "authorizedkeys":  existUsers["users"][uname]["authorized_keys"],
+                "ipsecpsk":  existUsers["users"][uname]["ipsec_keys"],
+                "userid": uid,
+                "save": "Save"
+            }
+            # Make our POST request
+            chPassPost = http_request(url + "/system_usermanager.php?act=edit&userid=" + uid, chPassData, {}, {}, 45, "POST")
+            # Check that we did not encounter errors
+            if chPassPost["resp_url"] == url + "/system_usermanager.php":
+                passwdChanged = 0    # Assign return code 0 (success)
+        # If our user does not exist
+        else:
+            passwdChanged = 4    # Return code 4 (user not found)
+    # If we could not pull our existing users, return the non-zero return code received from get_users()
+    else:
+        passwdChanged = existUsers["ec"]
+    # Return our code
+    return passwdChanged
 
 # get_user_groups() pulls information from system_groupmanager.php and formats all data about configured user groups
 def get_user_groups(server, user, key):
@@ -3428,6 +3658,142 @@ def main():
                 else:
                     print(get_exit_message(userData["ec"],pfsenseServer,pfsenseAction,"",""))   # Print error
                     sys.exit(userData["ec"])    # Exit on our return code
+
+            # Assign functions for flag --add-user
+            elif pfsenseAction == "--add-user":
+                # Action variables
+                uname = thirdArg if len(sys.argv) > 3 else input("Username: ")    # Save our user input for the new username or prompt for input if none
+                enable = filter_input(fourthArg) if len(sys.argv) > 4 else input("Enable user [yes,no]: ")    # Save our enable user input or prompt for input if none
+                passwd = fifthArg if len(sys.argv) > 5 else getpass.getpass("Password: ")    # Save our password input or prompt user for input if none
+                fname = sixthArg if len(sys.argv) > 6 else input("Full name: ")    # Save our full name input or prompt user for input if none
+                fname = "" if fname.lower() == "none" else fname    # Allow user to specify `none` if they do not want to add a full name
+                expDate = seventhArg if len(sys.argv) > 7 else input("Expiration date [mm/dd/yyyy, blank for none]: ")    # Save our date input (mm/dd/yyyy) or prompt user for input if none
+                expDate = "" if expDate.lower() == "none" else expDate    # Allow user to specify `none` if they don't want the account to expire
+                groupsRaw = eighthArg + "," if len(sys.argv) > 8 else None    # Save our groups input, or assign None value if none. Will be prompted for input later if none
+                groupsRaw = "," if groupsRaw is not None and groupsRaw.lower() == "none," else groupsRaw    # Allow user to specify `none` if they don't want to add user to any groups
+                # Check if groups input via interactive mode
+                if groupsRaw is None:
+                    groups = []    # Initialize our groups list
+                    # Loop until we have all our desired groups
+                    while True:
+                        gInput = input("Add user to group [blank entry if done]: ")
+                        # Check if a non blank input was recieved
+                        if gInput != "":
+                            groups.append(gInput)    # Add our entry to the group and repeat the loop
+                        # Otherwise break the loop
+                        else:
+                            break
+                # Otherwise, format our groups to a list
+                else:
+                    groups = list(filter(None, groupsRaw.split(",")))
+                user = tenthArg if ninthArg == "-u" and tenthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = twelfthArg if eleventhArg == "-p" and twelfthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # INPUT VALIDATION
+                # Check that our enable value is valid
+                if enable in ["yes","no","enable","disable"]:
+                    enable = "" if enable in ["yes","enable"] else "yes"    # Switch our enabled to value to blank string (meaning do not disable) otherwise "yes"
+                    # Check if our expiration date is valid, or if the user does not want to specify an expiration
+                    if validate_date_format(expDate) or expDate == "":
+                        # Pull our group configuration and check if we encountered an error
+                        availGroups = get_user_groups(pfsenseServer, user, key)
+                        if availGroups["ec"] == 0:
+                            # Check if our groups exist
+                            for grp in groups:
+                                # If our group doesn't exist, print error and exit on non zero status
+                                if grp not in availGroups["groups"]:
+                                    print(get_exit_message("invalid_group",pfsenseServer,pfsenseAction,grp,""))
+                                    sys.exit(1)
+                            # Add our user, check if the user was successfully added and print our exit message and exit on return code
+                            userAdded = add_user(pfsenseServer, user, key, uname, enable, passwd, fname, expDate, groups)
+                            print(get_exit_message(userAdded, pfsenseServer, pfsenseAction, uname, ""))
+                            sys.exit(userAdded)
+                        # If we encountered an error pulling our groups, print our error message and exit on non-zero status
+                        else:
+                            print(get_exit_message(availGroups["ec"],pfsenseServer,pfsenseAction,"",""))
+                            sys.exit(1)
+                    # If our date is invalid, print error message and exit on non zero status
+                    else:
+                        print(get_exit_message("invalid_date",pfsenseServer,pfsenseAction,expDate,""))
+                        sys.exit(1)
+                # If our enable value is invalid, print error message and exit on non zero status
+                else:
+                    print(get_exit_message("invalid_enable",pfsenseServer,pfsenseAction,enable,""))
+                    sys.exit(1)
+
+            # Assign functions for flag --add-user-key
+            elif pfsenseAction == "--add-user-key":
+                # Action variables
+                uname = thirdArg.lower() if len(sys.argv) > 3 else input("Username to add key: ").lower()    # Get user input for username, otherwise prompt user for input
+                keyType = filter_input(fourthArg).lower() if len(sys.argv) > 4 else input("Key type [ssh,ipsec]: ").lower()    # Get user input for key type, or prompt user to input
+                validInput = False    # Init a bool as false to track whether we are ready to run our configuration function
+                # Get variables if key type is SSH
+                if keyType.lower() == "ssh":
+                    pubKeyPath = fifthArg if len(sys.argv) > 5 else input("Path to key file: ")    # Get our key path, or prompt user for path if none
+                    destruct = sixthArg if len(sys.argv) > 6 else input("Override existing keys? [yes,no]: ")    # Get our key override value, or prompt user for input if none
+                    user = eighthArg if seventhArg == "-u" and eighthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                    key = tenthArg if ninthArg == "-p" and tenthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                    # INPUT VALIDATION
+                    # Check if our key file exists
+                    if os.path.exists(pubKeyPath):
+                        # Read our file and save it's contents
+                        with open(pubKeyPath,"r") as kf:
+                            pubKey = kf.read()
+                        # Check that our destruct value is okay
+                        if destruct.lower() in ["yes","no"]:
+                            destruct = True if destruct.lower() == "yes" else False    # Swap yes to True, and no to False
+                            validInput = True    # Assign true value, we're ready to run our command
+                        # If our destruct value is invalid
+                        else:
+                            print(get_exit_message("invalid_override", pfsenseServer, pfsenseAction, destruct, ""))
+                            sys.exit(1)
+                    # If our key file does not exist, print our error message and exit
+                    else:
+                        print(get_exit_message("invalid_ssh_path", pfsenseServer, pfsenseAction, pubKeyPath, ""))
+                        sys.exit(1)
+                # Get variables if key type is IPsec
+                elif keyType.lower() == "ipsec":
+                    pubKey = fifthArg if len(sys.argv) > 5 else getpass.getpass("IPsec pre-shared key: ")    # Get our key, or prompt user for key if none
+                    user = seventhArg if sixthArg == "-u" and seventhArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                    key = ninthArg if eighthArg == "-p" and ninthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                    destruct = True    # Always replace this value if run, only one key is allowed
+                    validInput = True  # Assign true value, we're ready to run our command
+                # If we received an invalid key type input
+                else:
+                    print(get_exit_message("invalid_key_type", pfsenseServer, pfsenseAction, keyType, ""))
+                    sys.exit(1)
+                # Check if we are ready to run our configure function
+                if validInput:
+                    # Execute our add_user_key() function
+                    addKeyEc = add_user_key(pfsenseServer, user, key, uname, keyType, pubKey, destruct)
+                    print(get_exit_message(addKeyEc, pfsenseServer, pfsenseAction, keyType, uname))
+                    sys.exit(addKeyEc)
+                # If for any reason our valid input was false, print error and exit on non-zero
+                else:
+                    print(get_exit_message(2, pfsenseServer, pfsenseAction, keyType, ""))
+                    sys.exit(2)
+
+            # Assign functions for flag --change-user-passwd
+            elif pfsenseAction == "--change-user-passwd":
+                # Action variables
+                uname = thirdArg if len(sys.argv) > 3 else input("Change username: ")    # Save our user input for username to change, prompt for input if none
+                passwd = fourthArg if len(sys.argv) > 4 else None    # Save our user input, or assing None if interactive mode. Interactive mode will require confirmation
+                # If our passwd is being passed using interactive mode
+                if passwd is None:
+                   # Loop until our passwd is successfully confirmed
+                    while True:
+                        passwd = getpass.getpass("New password: ")    # Prompt user for new passwd
+                        passwdConf = getpass.getpass("Confirm password: ")    # Prompt user to confirm password
+                        # Check if our inputs match, otherwise prompt user to reinput passwords
+                        if passwd == passwdConf:
+                            break
+                        else:
+                            print("Passwords do not match")
+                user = sixthArg if fifthArg == "-u" and sixthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = eighthArg if seventhArg == "-p" and eighthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # Run our change passwd function
+                passwdChanged = change_user_passwd(pfsenseServer, user, key, uname, passwd)
+                print(get_exit_message(passwdChanged,pfsenseServer,pfsenseAction,uname,""))
+                sys.exit(passwdChanged)
 
             # If user is trying to add an auth server, gather required configuration data from user
             elif pfsenseAction == "--add-ldapserver":
