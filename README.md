@@ -410,7 +410,7 @@ Commands
             - `wol`: Replicate Wake-On-LAN configuration only
         - `<replication_targets>` : Specify hostname/IPs of pfSense systems to replicate the configuration to (multiple entries must be comma separated or added interactively)
 ***
-- `--run-shell-cmd` : Either runs a single shell command or opens a virtual shell (shell over HTTPS) _Note: virtual shell is fixed to the `/usr/local/www` directory. You cannot `cd` or run persistent commands such as continuous `ping`_
+- `--run-shell-cmd` : Either runs a single shell command or opens a virtual shell (shell over HTTPS) _Note: virtual shell is fixed to the `/usr/local/www` directory. You cannot `cd` or run persistent commands such as continuous `ping`. Tab autocompletion, prediction, and previous command shortcuts are unavailable_
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --run-shell-cmd <shell_cmd>`
     - **Arguments**:
     - `<shell_cmd>` : _Optional_ Specify a single shell command to execute. The output of the command will be printed to your terminal. _Note: enter `virtualshell` to start an interactive virtual shell via inline mode, otherwise leave blank for full interactive mode

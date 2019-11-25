@@ -11,6 +11,7 @@ import datetime
 import getpass
 import io
 import json
+import html
 import os
 import platform
 import requests
@@ -2290,8 +2291,9 @@ def get_installed_packages(server, user, key):
                 if expOutput + "-" in p:
                     p = ' '.join(p.split(" "))    # Replace multiple spaces with one space
                     fullPkg = p.split(" ")[0]    # Save our entire pkg name
-                    pkgName = fullPkg.split("-")[2]    # Save our short pkg name
-                    pkgVer = fullPkg.split("-")[3]    # Save our pkg version
+                    pkgParse = fullPkg.replace("pfSense-pkg-", "").split("-")
+                    pkgName = "-".join(pkgParse[:-1])  # Everything but our last entry is the pkg name
+                    pkgVer = pkgParse[-1:][0]  # The last entry is our pkg version
                     installedPkgs["installed_pkgs"][pkgName] = {}    # Create our single pkg dict
                     installedPkgs["installed_pkgs"][pkgName]["pkg"] = fullPkg
                     installedPkgs["installed_pkgs"][pkgName]["name"] = pkgName
@@ -2322,8 +2324,9 @@ def get_available_packages(server, user, key):
                 for p in pkgList:
                     if expOutput + "-" in p:
                         fullPkg = p    # Save our entire pkg name
-                        pkgName = fullPkg.split("-")[2]    # Save our short pkg name
-                        pkgVer = fullPkg.split("-")[3]    # Save our pkg version
+                        pkgParse = fullPkg.replace("pfSense-pkg-","").split("-")
+                        pkgName = "-".join(pkgParse[:-1])    # Everything but our last entry is the pkg name
+                        pkgVer = pkgParse[-1:][0]   # The last entry is our pkg version
                         availPkgs["available_pkgs"][pkgName] = {}    # Create our single pkg dict
                         availPkgs["available_pkgs"][pkgName]["pkg"] = fullPkg
                         availPkgs["available_pkgs"][pkgName]["name"] = pkgName
@@ -4752,9 +4755,9 @@ def main():
                                 sys.exit(0)
                             else:
                                 cmdExec = get_shell_output(pfsenseServer, user, key, cmd)    # Attempt to execute our command
-                                # Check if our command executed successfully
+                                # Check if our command executed successfully, if so print our response and decode HTML entities
                                 if cmdExec["ec"] == 0:
-                                    print(cmdExec["shell_output"])
+                                    print(html.unescape(cmdExec["shell_output"]))
                                 # If our command was not successful, print error
                                 else:
                                     print(get_exit_message(2, pfsenseServer, pfsenseAction, cmd, ""))
