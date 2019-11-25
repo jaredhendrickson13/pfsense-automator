@@ -169,7 +169,7 @@ Commands
             - `dnsforwarder` - Sync DNS Resolver and DNS Forwarder configurations between systems
             - `captiveportal` - Sync captive portal configurations between systems
 ***
-- `--setup-hapfsense` : Configures full HA pfSense. Automating the processes of `--add-virtual-ip` and `--setup-hasync` _Notes: Both MASTER and BACKUP nodes must be on the same pfSense version or an error is thrown, both MASTER and BACKUP nodes must utilize the same webConfigurator credentials, protocol and port, by default all XMLRPC sync options are enabled_
+- `--setup-hapfsense` : Configure full HA pfSense. Automating the processes of `--add-virtual-ip` and `--setup-hasync` _Notes: Both MASTER and BACKUP nodes must be on the same pfSense version or an error is thrown, both MASTER and BACKUP nodes must utilize the same webConfigurator credentials, protocol and port, by default all XMLRPC sync options are enabled_
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --setup-hapfsense <backup_node_ip> <ha_interfaces> <ha_ips> <carp_passwd> <pfsync_interface> <pfsync_ip>`
     - **Arguments**:
         - `<backup_node_ip>` - Specify the IP of the node that will assume the BACKUP node status _Note: the target server IP/hostname will assume the MASTER node status_
@@ -179,7 +179,33 @@ Commands
         - `<pfsync_interface>` -  Specify the interface to be used by PFSYNC, in most cases this should be a dedicated interface that is directly connected to each node
         - `<pfsync_ip>` -  Specify the IP PFSYNC will peer to when syncing the states table _Note: this must be BACKUP nodes IP address that is within the subnet hosted by the interfaces specified in `<pfsync_interface>`_
 ***
-- `--read-users`: Reads current local user database
+- `--read-available-pkgs`: Read all packages available to pfSense's webConfigurator _Note: this requires access to diag_command.php_
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-available-pkgs <argument>`
+    - **Arguments**:
+        - `--all` (`-a`) : Return all packages
+        - `--name` (`-n`) : Return only packages that contain an expression (e.g. `--name=zabbix`)
+        - `--read-json` (`-rf`) : Prints available package data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
+        - `--json=<directory_path>` : Exports available package data to a JSON file given an existing directory
+***
+- `--read-installed-pkgs`: Read all packages installed on pfSense's webConfigurator _Note: this requires access to diag_command.php_
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-installed-pkgs <argument>`
+    - **Arguments**:
+        - `--all` (`-a`) : Return all install packages
+        - `--name` (`-n`) : Return only installed packages that contain an expression (e.g. `--name=zabbix`)
+        - `--read-json` (`-rf`) : Prints installed package data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
+        - `--json=<directory_path>` : Exports installed package data to a JSON file given an existing directory
+***
+- `--add-pkg`: Add a new package to pfSense's webConfigurator _Note: this requires access to diag_command.php_
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-pkg <pkg>`
+    - **Arguments**:
+        - `<pkg>` : Specify the name of the package to be installed
+***
+- `--del-pkg`: Remove an existing package to pfSense's webConfigurator _Note: this requires access to diag_command.php_
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --del-pkg <pkg>`
+    - **Arguments**:
+        - `<pkg>` : Specify the name of the package to be removed
+***
+- `--read-users`: Read current local user database
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-users <argument>`
     - **Arguments**:
         - `--all` (`-a`,`-d`,`default`) : Return all users
@@ -383,6 +409,11 @@ Commands
             - `vlans`: Replicate VLAN configurations only
             - `wol`: Replicate Wake-On-LAN configuration only
         - `<replication_targets>` : Specify hostname/IPs of pfSense systems to replicate the configuration to (multiple entries must be comma separated or added interactively)
+***
+- `--run-shell-cmd` : Either runs a single shell command or opens a virtual shell (shell over HTTPS) _Note: virtual shell is fixed to the `/usr/local/www` directory. You cannot `cd` or run persistent commands such as continuous `ping`_
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --run-shell-cmd <shell_cmd>`
+    - **Arguments**:
+    - `<shell_cmd>` : _Optional_ Specify a single shell command to execute. The output of the command will be printed to your terminal. _Note: enter `virtualshell` to start an interactive virtual shell via inline mode, otherwise leave blank for full interactive mode
 ***
 - `--add-tunable` : Adds a new system tunable to System > Advanced > System Tunables
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-tunable <tunable_name> <descr> <value>`

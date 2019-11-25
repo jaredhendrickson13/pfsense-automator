@@ -343,6 +343,55 @@ def get_exit_message(ec, server, command, data1, data2):
             "missing_args": "Error: missing arguments",
             "descr": structure_whitespace("  --add-ldapserver", cmdFlgLen, " ", True) + " : Add a new LDAP authentication server ",
         },
+        # Error/success messages for --read-installed-pkgs flag
+        "--read-available-pkgs": {
+            2: "Error: Unexpected error reading available packages",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err": "Error: export directory `" + data1 + "` does not exist",
+            "export_success": "Successfully exported available package data to " + data1,
+            "export_fail": "Failed to export available package data as JSON",
+            "descr": structure_whitespace("  --read-available-pkgs", cmdFlgLen, " ", True) + " : Read available packages from System > Package Manager",
+        },
+        # Error/success messages for --read-installed-pkgs flag
+        "--read-installed-pkgs": {
+            2: "Error: Unexpected error reading package installations",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "export_err": "Error: export directory `" + data1 + "` does not exist",
+            "export_success": "Successfully exported package data to " + data1,
+            "export_fail": "Failed to export package data as JSON",
+            "descr": structure_whitespace("  --read-installed-pkgs", cmdFlgLen, " ", True) + " : Read installed packages from System > Package Manager",
+        },
+        # Error/success messages for --add-package
+        "--add-pkg": {
+            0: "Successfully installed package `" + data1 + "`",
+            2: "Error: Unexpected error installing package",
+            3: globalAuthErrMsg,
+            4: "Error: Package `" + data1 + "` does not exist",
+            5: "Error: Package `" + data1 + "` is already installed",
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "descr": structure_whitespace("  --add-pkg", cmdFlgLen, " ", True) + " : Add a new package to pfSense",
+        },
+        # Error/success messages for --del-package
+        "--del-pkg": {
+            0: "Successfully removed package `" + data1 + "`",
+            2: "Error: Unexpected error removing package",
+            3: globalAuthErrMsg,
+            4: "Error: Package `" + data1 + "` is not installed",
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "descr": structure_whitespace("  --del-pkg", cmdFlgLen, " ", True) + " : Remove an existing package from pfSense",
+        },
         # Error/success messages for --read-arp flag
         "--read-arp": {
             2: "Error: Unexpected error reading ARP configuration",
@@ -394,6 +443,15 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_area": "Error: Invalid restoration area `" + data1 + "`",
             "invalid_targets": "Error: Invalid target string `" + data1 + "`",
             "descr": structure_whitespace("  --replicate-xml", cmdFlgLen, " ", True) + " : Copy an XML area from one pfSense server to another",
+        },
+        # Error/success messages for --run-shell-cmd
+        "--run-shell-cmd": {
+            2: "Error: Unexpected response from command `" + data1 + "`",
+            3: globalAuthErrMsg,
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "descr": structure_whitespace("  --run-shell-cmd", cmdFlgLen, " ", True) + " : Run a single shell command or start a virtual shell",
         },
         # Error/success messages for --read-interfaces flag
         "--read-interfaces": {
@@ -1692,8 +1750,7 @@ def set_system_hostname(server, user, key, host, domain):
 # get_ha_sync() pulls our current HA configuration from system_hasync.php
 def get_ha_sync(server, user, key):
     # Local variables
-    haSync = {
-        "ec": 2, "ha_sync" : {}}    # Pre-define our data dictionary
+    haSync = {"ec": 2, "ha_sync" : {}}    # Pre-define our data dictionary
     url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
     # Submit our intitial request and check for errors
     haSync["ec"] = 10 if check_dns_rebind_error(url) else haSync["ec"]    # Return exit code 10 if dns rebind error found
@@ -2217,11 +2274,159 @@ def setup_console(server, user, key, consolePass):
     # Return our exit code
     return consoleConfigured
 
+# get_packages() reads installed packages from pfSense's UI repos
+def get_installed_packages(server, user, key):
+    # Local variables
+    installedPkgs = {"ec": 2, "installed_pkgs": {}}    # Init our return dictionary that tracks exit codes and packages
+    expOutput = "pfSense-pkg"    # Define the string to check for when looking for pfSense packages
+    pkgShellOut = get_shell_output(server, user, key, "pkg info | grep " + expOutput)    # Run our shell cmd to return installed pkgs
+    # Check that our command ran successfully
+    if pkgShellOut["ec"] == 0:
+        # Check that we have expected output
+        if expOutput + "-" in pkgShellOut["shell_output"]:
+            pkgStr = pkgShellOut["shell_output"] + "\n"    # Add a new line so we always have a list when splitting
+            pkgList = pkgStr.split("\n")    # Split our string into a list on every new line
+            for p in pkgList:
+                if expOutput + "-" in p:
+                    p = ' '.join(p.split(" "))    # Replace multiple spaces with one space
+                    fullPkg = p.split(" ")[0]    # Save our entire pkg name
+                    pkgName = fullPkg.split("-")[2]    # Save our short pkg name
+                    pkgVer = fullPkg.split("-")[3]    # Save our pkg version
+                    installedPkgs["installed_pkgs"][pkgName] = {}    # Create our single pkg dict
+                    installedPkgs["installed_pkgs"][pkgName]["pkg"] = fullPkg
+                    installedPkgs["installed_pkgs"][pkgName]["name"] = pkgName
+                    installedPkgs["installed_pkgs"][pkgName]["version"] = pkgVer
+            # Return our success exit code
+            installedPkgs["ec"] = 0
+    # If we encountered an error running our shell cmd, return the code returned by get_shell_output()
+    else:
+        installedPkgs["ec"] = pkgShellOut["ec"]
+    # Return our dictionary
+    return installedPkgs
+
+# get_available_packages() pulls a list of packages that are able to be installed on pfSense
+def get_available_packages(server, user, key):
+    # Local variables
+    availPkgs = {"ec": 2, "available_pkgs": {}}    # Initialize our dictionary to track error codes and available packages
+    expOutput = "pfSense-pkg"    # Define the string to check for when looking for pfSense packages
+    getAvailPackages = get_shell_output(server, user, key, "pkg search -q " + expOutput)    # Get our available packages
+    getInstalledPackages = get_installed_packages(server, user, key)    # Get our  installed packages
+    # Check that we received our available pkg output
+    if getAvailPackages["ec"] == 0:
+        # Check that we received our installed pkg output
+        if getInstalledPackages["ec"] == 0:
+            # Check that we have expected output
+            if expOutput + "-" in getAvailPackages["shell_output"]:
+                pkgStr = getAvailPackages["shell_output"] + "\n"    # Add a new line so we always have a list when splitting
+                pkgList = pkgStr.split("\n")    # Split our string into a list on every new line
+                for p in pkgList:
+                    if expOutput + "-" in p:
+                        fullPkg = p    # Save our entire pkg name
+                        pkgName = fullPkg.split("-")[2]    # Save our short pkg name
+                        pkgVer = fullPkg.split("-")[3]    # Save our pkg version
+                        availPkgs["available_pkgs"][pkgName] = {}    # Create our single pkg dict
+                        availPkgs["available_pkgs"][pkgName]["pkg"] = fullPkg
+                        availPkgs["available_pkgs"][pkgName]["name"] = pkgName
+                        availPkgs["available_pkgs"][pkgName]["version"] = pkgVer
+                        availPkgs["available_pkgs"][pkgName]["installed"] = True if pkgName in getInstalledPackages["installed_pkgs"] else False    # Check if package is installed already
+                # Return our success exit code
+                availPkgs["ec"] = 0
+        # If we received an error pulling our installed packages
+        else:
+            availPkgs["ec"] = getAvailPackages["ec"]
+    # If we received an error pulling our available packages
+    else:
+        availPkgs["ec"] = getAvailPackages["ec"]
+    # Return our exit code
+    return availPkgs
+
+# add_package() adds a new pfSense package
+def add_package(server, user, key, pkg):
+    # Local variables
+    pkgAdded = 2    # Assign an integer to track various errors that may be encountered
+    availPkgs = get_available_packages(server, user, key)    # Pull our dictionary of available packages
+    # Check that we did not encounter an error pulling our available packages
+    if availPkgs["ec"] == 0:
+        # Check that our package is in our available packages
+        if pkg in availPkgs["available_pkgs"]:
+            # Check that our package is not already installed
+            if not availPkgs["available_pkgs"][pkg]["installed"]:
+                # Install our package, check that it was installed successfully
+                addPkg = get_shell_output(server, user, key, "pkg install -y pfSense-pkg-" + pkg)
+                if addPkg["ec"] == 0:
+                    installedPkgs = get_installed_packages(server, user, key)    # Update our installed pkg dictionary
+                    if pkg in installedPkgs["installed_pkgs"]:
+                        pkgAdded = 0    # Return exit code 0 (success)
+            # If our package is already installed, returne exit code 5 (pkg already installed)
+            else:
+                pkgAdded = 5
+        # If our package is not an available package, return exit code 4 (pkg not found)
+        else:
+            pkgAdded = 4
+    # If we could not pull our available packages, return code returned by get_available_packages()
+    else:
+        pkgAdded = availPkgs["ec"]
+    # Return our code
+    return pkgAdded
+
+# del_package() deletes an existing pfSense package
+def del_package(server, user, key, pkg):
+    # Local variables
+    pkgDel = 2    # Assign an integer to track various errors that may be encountered
+    installedPkgs = get_installed_packages(server, user, key)    # Pull our dictionary of installed packages
+    # Check that we did not encounter an error pulling our available packages
+    if installedPkgs["ec"] == 0:
+        # Check that our package is in our installed packages
+        if pkg in installedPkgs["installed_pkgs"]:
+            # Install our package, check that it was installed successfully
+            deletePkg = get_shell_output(server, user, key, "pkg remove -y pfSense-pkg-" + pkg)
+            if deletePkg["ec"] == 0:
+                installedPkgs = get_installed_packages(server, user, key)    # Update our installed pkg dictionary
+                if pkg not in installedPkgs["installed_pkgs"]:
+                    pkgDel = 0    # Return exit code 0 (success)
+        # If our package is not an available package, return exit code 4 (pkg not found)
+        else:
+            pkgDel = 4
+    # If we could not pull our available packages, return code returned by get_installed_pkgs()
+    else:
+        pkgDel = installedPkgs["ec"]
+    # Return our code
+    return pkgDel
+
+# get_shell_output() executes a shell command in diag_command.php and returns it's output
+def get_shell_output(server, user, key, cmd):
+    # Local variables
+    shellOut = {"ec": 2, "shell_output" : ""}    # Create a dictionary to track our return code and our shell cmd output
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    # Submit our initial request and check for errors
+    shellOut["ec"] = 10 if check_dns_rebind_error(url) else shellOut["ec"]    # Return exit code 10 if dns rebind error found
+    shellOut["ec"] = 6 if not validate_platform(url) else shellOut["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if shellOut["ec"] == 2:
+        shellOut["ec"] = 3 if not check_auth(server, user, key) else shellOut["ec"]    # Return exit code 3 if we could not sign in
+    # Check if we encountered any errors before staring
+    if shellOut["ec"] == 2:
+        # Check that we had permissions for this page
+        getShellData = http_request(url + "/diag_arp.php", {}, {}, {}, 45, "GET")    # Pull our Interface data using GET HTTP
+        if check_permissions(getShellData):
+            # Create our POST data dictionary and run our POST request
+            shellCmdPostData = {"__csrf_magic": get_csrf_token(url + "/diag_command.php", "GET"), "txtCommand": cmd, "submit": "EXEC"}
+            shellCmdPost = http_request(url + "/diag_command.php", shellCmdPostData, {}, {}, 90, "POST")
+            # Check that our output <pre> tags exist
+            if "<pre>" in shellCmdPost["text"]:
+                shellOut["shell_output"] = shellCmdPost["text"].split("<pre>")[1].split("</pre>")[0]    # Update our shell output value
+                shellOut["ec"] = 0    # Return exit code 0 (success)
+        # If we did not have permission, return exit code 15 (permission denied)
+        else:
+            shellOut["ec"] = 15
+    # Return our data dictionary
+    return shellOut
+
 # get_arp_table() pulls our pfSense's current ARP table
 def get_arp_table(server, user, key):
     arpTable = {"ec" : 2, "arp" : {}}    # Pre-define our function dictionary
     url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
-    # Submit our intitial request and check for errors
+    # Submit our initial request and check for errors
     arpTable["ec"] = 10 if check_dns_rebind_error(url) else arpTable["ec"]    # Return exit code 10 if dns rebind error found
     arpTable["ec"] = 6 if not validate_platform(url) else arpTable["ec"]    # Check that our URL appears to be pfSense
     # Check if we have not encountered an error that would prevent us from authenticating
@@ -4528,6 +4733,47 @@ def main():
                     print(get_exit_message("invalid_vlan", pfsenseServer, pfsenseAction, vlanId, ""))
                     sys.exit(1)    # Exit on non-zero
 
+            # Assign functions for --run-shell-cmd
+            elif pfsenseAction == "--run-shell-cmd":
+                # Action variables
+                shellCmd = thirdArg if len(sys.argv) > 3 else None    # Save our shell input if inline mode, otherwise indicate None for interactive shell
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # INTERACTIVE MODE/VIRTUAL SHELL
+                if shellCmd is None or shellCmd.lower() == "virtualshell":
+                    if check_auth(pfsenseServer, user, key):
+                        print("---Virtual shell established---")
+                        # Loop input to simulate an interactive shell
+                        while True:
+                            cmd = input(user + "@" + pfsenseServer + ":/usr/local/www $ ")    # Accept shell command inputs
+                            # Check if user typed "close" indicating they wish to end the virtual shell
+                            if cmd.lower() in ["close","exit","quit"]:
+                                print("---Virtual shell terminated---")
+                                sys.exit(0)
+                            else:
+                                cmdExec = get_shell_output(pfsenseServer, user, key, cmd)    # Attempt to execute our command
+                                # Check if our command executed successfully
+                                if cmdExec["ec"] == 0:
+                                    print(cmdExec["shell_output"])
+                                # If our command was not successful, print error
+                                else:
+                                    print(get_exit_message(2, pfsenseServer, pfsenseAction, cmd, ""))
+                    # If authentication failed, print error and exit on non-zero
+                    else:
+                        print(get_exit_message(3, pfsenseServer, pfsenseAction, "", ""))
+                        sys.exit(3)
+                # INLINE MODE/SINGLE CMD
+                else:
+                    cmdExec = get_shell_output(pfsenseServer, user, key, shellCmd)    # Run our command
+                    # Check if our command ran successfully, if so print our output
+                    if cmdExec["ec"] == 0:
+                        print(cmdExec["shell_output"])
+                        sys.exit(0)
+                    # If our command did not run successfully, print our error and exit on non-zero
+                    else:
+                        print(get_exit_message(cmdExec["ec"], pfsenseServer, pfsenseAction, shellCmd, ""))
+                        sys.exit(cmdExec["ec"])
+
             # Assign functions for flag --read-carp-status
             elif pfsenseAction == "--read-carp-status":
                 # Action variables
@@ -4653,13 +4899,166 @@ def main():
                     print(get_exit_message("invalid_toggle", pfsenseServer, pfsenseAction, enableToggle,""))
                     sys.exit(1)
 
+            # Assign functions for flag --read-available-pkgs
+            elif pfsenseAction == "--read-available-pkgs":
+                # Action variables
+                pkgFilter = thirdArg   # Save our third argument as our read filter
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                availablePkgs = get_available_packages(pfsenseServer, user, key)    # Pull our pkg configuration
+                idHead = structure_whitespace("#", 5, "-", True) + " "    # Format our ID header value
+                pkgHead = structure_whitespace("PACKAGE", 25, "-", True) + " "    # Format our package header header value
+                versionHead = structure_whitespace("VERSION", 15, "-", True) + " "    # Format our version header value
+                statusHead = structure_whitespace("STATUS", 15, "-", True) + " "    # Format our version header value
+                header = idHead + pkgHead + versionHead + statusHead    # Piece our header together
+                # Check that we did not receive an error pulling our data
+                if availablePkgs["ec"] == 0:
+                    # Loop through each item in our dictionary
+                    counter = 1    # Assign a loop counter
+                    for key,value in availablePkgs["available_pkgs"].items():
+                        # Format our data to line up with headers
+                        id = structure_whitespace(str(counter), 5, " ", True) + " "    # Get our entry number
+                        pkg = structure_whitespace(value["name"], 25, " ", True)  + " "   # Get our pkg name
+                        version = structure_whitespace(value["version"], 15, " ", True) + " "    # Get our pkg version
+                        installed = structure_whitespace("Installed" if value["installed"] else "Not installed", 15, " ", True) + " "    # Get our pkg version
+                        data = id + pkg + version + installed
+                        # Check user's filter input
+                        if pkgFilter.lower() in ["-a", "--all"]:
+                            print(header) if counter == 1 else None
+                            print(data)
+                        elif pkgFilter.lower().startswith(("--name=","-n=")):
+                            pkgExp = pkgFilter.replace("--name=","").replace("-n=","")    # Remove our filter identifier to capture our interface expression
+                            # Check if our expression matches any packages
+                            print(header) if counter == 1 else None
+                            if pkgExp in value["name"]:
+                                print(data)
+                        # If user wants to print the JSON output
+                        elif pkgFilter.lower() in ("--read-json", "-rj"):
+                            print(json.dumps(availablePkgs["available_pkgs"]))   # Print our JSON data
+                            break
+                        # If we want to export values as JSON
+                        elif pkgFilter.startswith(("--json=", "-j=")):
+                            jsonPath = pkgFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                            jsonName = "pf-readavailpkgs-" + currentDate + ".json"    # Assign our default JSON name
+                            # Check if JSON path exists
+                            if os.path.exists(jsonPath):
+                                # Open an export file and save our data
+                                jsonExported = export_json(availablePkgs["available_pkgs"], jsonPath, jsonName)
+                                # Check if the file now exists
+                                if jsonExported:
+                                    print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                                    break    # Break the loop as we only need to perfrom this function once
+                                else:
+                                    print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                    sys.exit(1)
+                            # Print error if path does not exist
+                            else:
+                                print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # If we did not recognize the requested filter print our error message
+                        else:
+                            print(get_exit_message("invalid_filter", pfsenseServer, pfsenseAction, pkgFilter, ""))
+                            sys.exit(1)    # Exit on non-zero status
+                        # Increase our counter
+                        counter = counter + 1
+                # If we encountered an error pulling our pkg data
+                else:
+                    print(get_exit_message(availablePkgs["ec"], pfsenseServer, pfsenseAction, "", ""))
+                    sys.exit(availablePkgs["ec"])
+
+            # Assign functions for flag --read-installed-pkgs
+            elif pfsenseAction == "--read-installed-pkgs":
+                # Action variables
+                pkgFilter = thirdArg    # Save our third argument as our read filter
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                installedPkgs = get_installed_packages(pfsenseServer, user, key)    # Pull our pkg configuration
+                idHead = structure_whitespace("#", 5, "-", True) + " "    # Format our ID header value
+                pkgHead = structure_whitespace("PACKAGE", 25, "-", True) + " "    # Format our package header header value
+                versionHead = structure_whitespace("VERSION", 15, "-", True) + " "    # Format our version header value
+                header = idHead + pkgHead + versionHead    # Piece our header together
+                # Check that we did not receive an error pulling our data
+                if installedPkgs["ec"] == 0:
+                    # Loop through each item in our dictionary
+                    counter = 1    # Assign a loop counter
+                    for key,value in installedPkgs["installed_pkgs"].items():
+                        # Format our data to line up with headers
+                        id = structure_whitespace(str(counter), 5, " ", True) + " "    # Get our entry number
+                        pkg = structure_whitespace(value["name"], 25, " ", True)  + " "   # Get our pkg name
+                        version = structure_whitespace(value["version"], 15, " ", True) + " "    # Get our pkg version
+                        data = id + pkg + version
+                        # Check user's filter input
+                        if pkgFilter.lower() in ["-a", "--all"]:
+                            print(header) if counter == 1 else None
+                            print(data)
+                        elif pkgFilter.lower().startswith(("--name=","-n=")):
+                            pkgExp = pkgFilter.replace("--name=","").replace("-n=","")    # Remove our filter identifier to capture our interface expression
+                            # Check if our expression matches any packages
+                            print(header) if counter == 1 else None
+                            if pkgExp in value["name"]:
+                                print(data)
+                        # If user wants to print the JSON output
+                        elif pkgFilter.lower() in ("--read-json", "-rj"):
+                            print(json.dumps(installedPkgs["installed_pkgs"]))   # Print our JSON data
+                            break
+                        # If we want to export values as JSON
+                        elif pkgFilter.startswith(("--json=", "-j=")):
+                            jsonPath = pkgFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                            jsonName = "pf-readpkgs-" + currentDate + ".json"    # Assign our default JSON name
+                            # Check if JSON path exists
+                            if os.path.exists(jsonPath):
+                                # Open an export file and save our data
+                                jsonExported = export_json(installedPkgs["installed_pkgs"], jsonPath, jsonName)
+                                # Check if the file now exists
+                                if jsonExported:
+                                    print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                                    break    # Break the loop as we only need to perfrom this function once
+                                else:
+                                    print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                    sys.exit(1)
+                            # Print error if path does not exist
+                            else:
+                                print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # If we did not recognize the requested filter print our error message
+                        else:
+                            print(get_exit_message("invalid_filter", pfsenseServer, pfsenseAction, pkgFilter, ""))
+                            sys.exit(1)    # Exit on non-zero status
+                        # Increase our counter
+                        counter = counter + 1
+                # If we encountered an error pulling our pkg data
+                else:
+                    print(get_exit_message(installedPkgs["ec"], pfsenseServer, pfsenseAction, "", ""))
+                    sys.exit(installedPkgs["ec"])
+
+            # Assign functions for flag --add-pkg
+            elif pfsenseAction == "--add-pkg":
+                # Action variables
+                pkgToAdd = thirdArg if len(sys.argv) > 3 else input("Add package: ")    # Get our user input inline, if not prompt user for input
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # Run our add pkg function, print our exit message and exit on code
+                pkgAdded = add_package(pfsenseServer, user, key, pkgToAdd)
+                print(get_exit_message(pkgAdded, pfsenseServer, pfsenseAction, pkgToAdd, ""))
+                sys.exit(pkgAdded)
+
+             # Assign functions for flag --del-pkg
+            elif pfsenseAction == "--del-pkg":
+                # Action variables
+                pkgToDel = thirdArg if len(sys.argv) > 3 else input("Delete package: ")    # Get our user input inline, if not prompt user for input
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # Run our add pkg function, print our exit message and exit on code
+                pkgDeleted = del_package(pfsenseServer, user, key, pkgToDel)
+                print(get_exit_message(pkgDeleted, pfsenseServer, pfsenseAction, pkgToDel, ""))
+                sys.exit(pkgDeleted)
+
             # Assign functions for flag --read-arp
             elif pfsenseAction == "--read-arp":
                 arpFilter = thirdArg if thirdArg is not None else ""    # Assign our filter value if one was provided, otherwise default to empty string
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
                 arpTable = get_arp_table(pfsenseServer, user, key)
-
                 idHead = structure_whitespace("#", 5, "-", True) + " "    # Format our ID header value
                 interfaceHead = structure_whitespace("INTERFACE", 15, "-", True) + " "    # Format our interface header header value
                 ipHead = structure_whitespace("IP", 15, "-", True) + " "    # Format our ip header value
