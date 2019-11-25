@@ -4742,17 +4742,26 @@ def main():
                 shellCmd = thirdArg if len(sys.argv) > 3 else None    # Save our shell input if inline mode, otherwise indicate None for interactive shell
                 user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
                 key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                vShellTimeout = 180    # Set the amount of time before our virtual shell session times out
                 # INTERACTIVE MODE/VIRTUAL SHELL
                 if shellCmd is None or shellCmd.lower() == "virtualshell":
                     if check_auth(pfsenseServer, user, key):
                         print("---Virtual shell established---")
                         # Loop input to simulate an interactive shell
                         while True:
+                            startTime = time.time()    # Track the time when the loop starts
                             cmd = input(user + "@" + pfsenseServer + ":/usr/local/www $ ")    # Accept shell command inputs
+                            endTime = time.time()    # Track the time after input was received
+                            elapsedTime = endTime - startTime    # Determine the elapsed time
                             # Check if user typed "close" indicating they wish to end the virtual shell
                             if cmd.lower() in ["close","exit","quit"]:
                                 print("---Virtual shell terminated---")
                                 sys.exit(0)
+                            # Check if our virtual session has timed out
+                            elif elapsedTime > vShellTimeout or 0 > elapsedTime:
+                                print("---Virtual shell timeout---")
+                                sys.exit(0)
+                            # If input is valid, submit the command to pfSense
                             else:
                                 cmdExec = get_shell_output(pfsenseServer, user, key, cmd)    # Attempt to execute our command
                                 # Check if our command executed successfully, if so print our response and decode HTML entities
