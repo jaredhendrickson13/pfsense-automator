@@ -188,7 +188,7 @@ Commands
         - `--json=<directory_path>` : Exports user data to a JSON file given an existing directory
 ***
 - `--add-user`: Add a new user to pfSense's webConfigurator
-    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-users <new_username> <enable> <passwd> <full_name> <exp_date> <groups>`
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-user <new_username> <enable> <passwd> <full_name> <exp_date> <groups>`
     - **Arguments**:
         - `<new_username>`  : Specify the desired username for the new user
         - `<enable>`: Specify whether you would like this user to be enabled or disabled after creation (`enable`,`disable`)
@@ -197,6 +197,12 @@ Commands
         - `<exp_date>`: Specify an expiration date for the new user's account. Enter `none` for no expiration
         - `<groups>`: Specify which groups to add the user to. Multiple group entries must be comma seperated, enter `none` for no group membership
 ***
+- `--del-user`: Remove an existing user to pfSense's webConfigurator
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --del-user <uname> --force`
+    - **Arguments**:
+        - `<uname>` : Specify the username or user ID of the user you are trying to delete
+        - `--force` : _Optional._ Do not require confirmation to remove the user _Note: this must be added as the **last** argument of your command regardless of interactive or inline mode being used_
+*** 
 - `--change-user-passwd`: Change an existing user's password 
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --change-user-passwd <username> <passwd>`
     - **Arguments**:

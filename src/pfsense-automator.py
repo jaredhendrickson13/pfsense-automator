@@ -281,6 +281,19 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_group": "Error: Group `" + data1 + "` does not exist",
             "descr": structure_whitespace("  --add-user", cmdFlgLen, " ", True) + " : Add a new local webConfigurator user"
         },
+        # Error/success messages for --del-user
+        "--del-user": {
+            0: "Successful removed user `" + data1 + "` from " + server,
+            2: "Error: Unexpected error removing user",
+            3: globalAuthErrMsg,
+            4: "Error: User `" + data1 + "` does not exist",
+            6: globalPlatformErrMsg,
+            10: globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_uid": "Error: Username `admin` or UID `0` cannot be removed",
+            "invalid_user": "Error: You cannot delete your own user",
+            "descr": structure_whitespace("  --del-user", cmdFlgLen, " ", True) + " : Remove an existing webConfigurator user"
+        },
         # Error/success messages for --add-user-key
         "--add-user-key": {
             0: "Successfully added " + data1 + " key to user `" + data2 + "`",
@@ -1155,6 +1168,54 @@ def add_user(server, user, key, uname, enable, passwd, fname, expDate, groups):
         userAdded = existUsers["ec"]
     # Return our exit code value
     return userAdded
+
+# del_user() deletes a user given a username or user ID
+def del_user(server, user, key, uid):
+    # Local variables
+    userDel = 2    # Assign our return code default as 2 (error)
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Assign our base URL
+    existUsers = get_users(server, user, key)    # Pull our current user configuration
+    # Check that we pulled our users successfully
+    if existUsers["ec"] == 0:
+        usrFound = False    # Assign a bool to track whether or not our user was found
+        # Check that our user exists
+        if uid in existUsers["users"]:
+            uname = uid    # Save our uname as our uid
+            id = existUsers["users"][uname]["id"]    # Pull our pfSense user ID from the dictionary for this user
+            usrFound = True
+        # If our username was not found, check if the user ID passed in is an ID number
+        elif uid.isdigit():
+            # Loop through our users and check for a user ID match
+            for u,data in existUsers["users"].items():
+                # Check if the ID matches our input
+                if data["id"] == uid:
+                    uname = u    # Save our username
+                    id = data["id"]    # Save our ID
+                    usrFound = True
+                    break    # Break our loop, we only need one set of values
+        # If we could not find a user, return exit code 4
+        else:
+            userDel = 4    # Return exit code 4 (user not found)
+        # Check if our user was found, if so run our command
+        if usrFound:
+            # Create a diciontary with our formatted POST values
+            delUsrPostData = {
+                "__csrf_magic": get_csrf_token(url + "/system_usermanager.php", "GET"),
+                "act": "deluser",
+                "username": uname,
+                "userid": id
+            }
+            # Run our POST request, then update our current users dictionary to check if the user no longer exists
+            delUserPost = http_request(url + "/system_usermanager.php", delUsrPostData, {}, {}, 45, "POST")
+            updateUsers = get_users(server, user, key)    # Pull our updated user configuration
+            if updateUsers["ec"] == 0 and uname not in updateUsers["users"]:
+                userDel = 0    # Return our success return code 0
+    # If we could not pull our user configuration, return the error code returned from get_users()
+    else:
+        userDel = existUsers["ec"]
+    # Return our exit value
+    return userDel
+
 
 # add_user_key() adds a new public key for either SSH or IPsec
 def add_user_key(server, user, key, uname, keyType, pubKey, destruct):
@@ -3718,6 +3779,37 @@ def main():
                 # If our enable value is invalid, print error message and exit on non zero status
                 else:
                     print(get_exit_message("invalid_enable",pfsenseServer,pfsenseAction,enable,""))
+                    sys.exit(1)
+
+            # Assign functions for flag --del-user
+            elif pfsenseAction == "--del-user":
+                # Action variables
+                uid = thirdArg if len(sys.argv) > 3 else input("Username or UID to remove: ")    # Save our username/id input from the user, or prompt for input if none
+                noConfArg = "--force"    # Assign the argument that will bypass confirmation before deletion
+                # Check if the user must confirm the deletion before proceeding
+                if noConfArg not in sys.argv:
+                    uidConf = input("Are you sure you would like to remove user `" + uid + "`? [y/n]: ").lower()    # Have user confirm the deletion
+                    # Exit if user did not confirm the deletion
+                    if uidConf not in ["y","yes"]:
+                        sys.exit(0)
+                user = fifthArg if fourthArg == "-u" and fifthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = seventhArg if sixthArg == "-p" and seventhArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # INPUT VALIDATION
+                # Check that our username is not "admin" or "0"
+                if uid.lower() not in ["admin","0"]:
+                    # Check that we are not trying to remove our own username
+                    if uid != user:
+                        # Run our function, print the return message and exit on the return code
+                        userDel = del_user(pfsenseServer, user, key, uid)
+                        print(get_exit_message(userDel, pfsenseServer, pfsenseAction, uid, ""))
+                        sys.exit(userDel)
+                    # If our uid to delete matches our username
+                    else:
+                        print(get_exit_message("invalid_user", pfsenseServer, pfsenseAction, "", ""))
+                        sys.exit(1)
+                # If our UID was "admin" or "0", return error
+                else:
+                    print(get_exit_message("invalid_uid", pfsenseServer, pfsenseAction, "", ""))
                     sys.exit(1)
 
             # Assign functions for flag --add-user-key
