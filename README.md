@@ -413,7 +413,7 @@ Commands
 - `--run-shell-cmd` : Either runs a single shell command or opens a virtual shell (shell over HTTPS) _Notes: Virtual shell is fixed to the `/usr/local/www` directory. You cannot `cd` or run persistent commands such as continuous `ping`. Tab autocompletion, prediction, and previous command shortcuts are unavailable. Virtual shell timeout is enforced at 180 seconds of no activity_
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --run-shell-cmd <shell_cmd>`
     - **Arguments**:
-    - `<shell_cmd>` : _Optional_ Specify a single shell command to execute. The output of the command will be printed to your terminal. _Note: enter `virtualshell` to start an interactive virtual shell via inline mode, otherwise leave blank for full interactive mode
+    - `<shell_cmd>` : ___Optional___ Specify a single shell command to execute. The output of the command will be printed to your terminal. _Note: enter `virtualshell` to start an interactive virtual shell via inline mode, otherwise leave blank for full interactive mode
 ***
 - `--add-tunable` : Adds a new system tunable to System > Advanced > System Tunables
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --add-tunable <tunable_name> <descr> <value>`
@@ -467,6 +467,46 @@ Commands
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --set-wc-sslcert <cert_name>`
     - **Arguments**:
         - `<cert_name>` : Specify which certificate to use by it's certificate name. This much match exactly as it shows in the Certificate Manager. If multiple certificates match the same name, an error is thrown.
+***
+- `--read-rules` : Read firewall rules for a given interface
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-rules <interface> <filter>`
+    - **Arguments**:
+        - `<interface>`: Specify the interface ACL to print
+        - `--all` (`-a`) : Return all available firewall rule values including system rules
+        - `--source` (`-s`) : Return only source addresses that start with a specified expression (e.g. `--source=127.0.0.1/32`) 
+        - `--destination` (`-d`) : Return only destination addresses that start with a specified expression (e.g. `--destination=127.0.0.1/32`) _
+        - `--protocol` (`-p`) : Return only protocols that match a specified expression (e.g. `--protocol=tcp`) 
+        - `--ip-version` (`-i`) : Return only rules for specific IP version (e.g. `--ip-version=v4`) 
+        - `--gateway` (`-g`) : Return only rules that route out a specific gateway (e.g. `--gateway=WANGW`) 
+        - `--read-json` (`-rf`) : Prints firewall rule data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
+        - `--json=<directory_path>` : Exports firewall rule data to a JSON file given an existing directory
+***
+- `--add-rule` : Add a new basic firewall rule to specified interface
+    - **Syntax**: 
+        - For TCP, UDP or TCP/UDP protocols:
+                `pfsense-automator <pfSense IP or hostname> --add-rules <interface> <rule_type> <ip_ver> <protocol> <src> <src_port> <dst> <dst_port> <gateway> <log> <descr> <position>`
+        - For all other protocols:
+                `pfsense-automator <pfSense IP or hostname> --add-rules <interface> <rule_type> <ip_ver> <protocol> <src> <dst> <gateway> <log> <descr> <position>`
+    - **Arguments**:
+        - `<interface>`: Specify which interface you would like to add the rule to 
+        - `<type>`: Specify whether to `pass`, `block`, or `reject` traffic that matches this rule 
+        - `<ip_ver>`: Specify the IP version this rule applies to (`ipv4`,`any`) _Note: at this time, only IPv4 rules are supported
+        - `<protocol>`: Specify the protocol this rule appies to (`any`,`tcp`,`udp`,`tcp/udp`,`icmp`) _Note: Using `icmp` will apply to all ICMP types_
+        - `<src>`: Specify the IP address or CIDR of the source. Invert the context of the source adding `!`,  `~`, `-`, or `?`before your entry
+        - `<dst>`: Specify the IP address or CIDR of the destination. Invert the context of the destination adding `!`,  `~`, `-`, or `?`before your entry
+        - `<src_port>`: Specify the source port. If a port range, seperate ports with hyphen `-` _Note: port numbers must be within `1-65535`, if using a port range your first port value must be less than or equal to the end port value_
+        - `<dst_port>`: Specify the destination port. If a port range, seperate ports with hyphen `-` _Note: port numbers must be within `1-65535`, if using a port range your first port value must be less than or equal to the end port value_
+        - `<gateway>`: Specify the gateway traffic matching this rule will use _Note: your gateway name must match exactly as it is shown in the webConfigurator_
+        - `<log>`: Log traffic matches for this rule (`yes`,`no`)
+        - `<descr>`: Add a desscription for your rule
+        - `<position>`:  ___optional___ Add `--top` as your last command argument (after credentials if using inline mode) to force the rule entry to be added to the top of the ACL
+***
+- `--del-rule`: Remove an existing firewall rule from a specified interface's ACL
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --del-rule <interface> <rule_id>`
+    - **Arguments**:
+        - `<interface>` : Specify the name of the interface whose ACL should be targeted
+        - `<rule_id>` : Specify the webConfigurator ID of the rule you would like to remove _Note: you can find the ID by using `--read-rules`_
+        - `--force>` : ___optional___ Specify `--force` as the last argument of the command if you would like to remove the rule without being prompted for confirmation
 ***
 - `--read-aliases` : Attempts to read current firewall aliases (only supports host, network and port aliases)
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-aliases <argument>`

@@ -39,6 +39,7 @@ thirteenthArg = sys.argv[13] if len(sys.argv) > 13 else None    # Declare 'thirt
 fourteenthArg = sys.argv[14] if len(sys.argv) > 14 else None    # Declare 'fourteenthArg' to populate the fourteenth argument passed in to the script
 fifteenthArg = sys.argv[15] if len(sys.argv) > 15 else None    # Declare 'fifteenthArg' to populate the fifteenth argument passed in to the script
 sixteenthArg = sys.argv[16] if len(sys.argv) > 16 else None    # Declare 'sixteenthArg' to populate the sixteenth argument passed in to the script
+seventeenthArg = sys.argv[17] if len(sys.argv) > 17 else None    # Declare 'seventeenthArg' to populate the seventeenth argument passed in to the script
 localUser = getpass.getuser()    # Save our current user's username to a string
 localHostname = socket.gethostname()    # Gets the hostname of the system running pfsense-automator
 currentDate = datetime.datetime.now().strftime("%Y%m%d%H%M%S")    # Get the current date in a file supported format
@@ -548,6 +549,37 @@ def get_exit_message(ec, server, command, data1, data2):
             "export_fail" : "Failed to export Firewall Rules data as JSON",
             "descr": structure_whitespace("  --read-rules", cmdFlgLen, " ", True) + " : Read configured firewall rules from Firewall > Rules",
         },
+        # Error/success messages for --add-rule
+        "--add-rule" : {
+            0: "Successfully added firewall rule to " + server + " on `" + data1 + "`",
+            2: "Error: Unexpected error adding firewall rule",
+            3 : globalAuthErrMsg,
+            4: "Error: Invalid source port. Port must be between 1 & 65535. If a port range, your start port must be less than your end port",
+            5: "Error: Invalid destination port. Port must be between 1 & 65535. If a port range, your start port must be less than your end port",
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_type": "Error: Invalid rule type `" + data1 + "`. Expected `pass`, `block`, or `reject`",
+            "invalid_ipver" : "Error: Invalid IP version `" + data1 + "`. Expected `ipv4`, `ipv6` or `any`",
+            "invalid_protocol" : "Error: Invalid protocol `" + data1 + "`. Available protocols: [" + data2 + "]",
+            "invalid_source" : "Error: Invalid source address `" + data1 + "`",
+            "invalid_dest": "Error: Invalid destination address `" + data1 + "`",
+            "invalid_bitmask" : "Error: Invalid bitmask `" + data1 + "`. Expected value between 1 & 32",
+            "descr": structure_whitespace("  --add-rule", cmdFlgLen, " ", True) + " : Add a new basic firewall rule",
+        },
+        # Error/success messages for --del-rule
+        "--del-rule" : {
+            0: "Successfully removed firewall rule ID `" + data2 + "` from ACL `" + data1 + "`",
+            2: "Error: Unexpected error remvoing firewall rule",
+            3 : globalAuthErrMsg,
+            4: "Error: Invalid interface. Interface `" + data1 + "` does not exist",
+            5: "Error: Invalid rule ID. Rule ID `" + data2 + "` does not exist",
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_id": "Error: Invalid rule ID. Expected a number greater than 0",
+            "descr": structure_whitespace("  --del-rule", cmdFlgLen, " ", True) + " : Delete a firewall rule from an interface ACL",
+        },
         # Error/success messages for --read-aliases
         "--read-aliases" : {
             3 : globalAuthErrMsg,
@@ -844,6 +876,30 @@ def validate_ip(ip):
                 loopIndex = loopIndex + 1    # Increase the index after each loop completion
     # Return boolean
     return validIP
+
+# validate_port_range() takes a port or port range (separated by -) and determine if the port range is valid
+def validate_port_range(port):
+    # Local variables
+    ports = {"valid": False, "start": 0, "end": 0}    # Create a dictionary to track various values
+    # Check if port contains `-` range indicator
+    if "-" in str(port):
+        portRng = str(port).split("-")    # Split our port to capture our start and end port
+        # Check that our list only has two values
+        if len(portRng) == 2:
+            startPort = int(portRng[0]) if portRng[0].isdigit() else 0    # Save our start port
+            endPort = int(portRng[1]) if portRng[1].isdigit() else 65536    # Save our start port
+            startPortVld = False    # Assign a bool to track if the start port is valid
+            endPortVld = False    # Assign a bool to track if the end port is valid
+            # Check if our start port is within range and less than the end port
+            if 1 <= startPort <= 65535 and 1 <= endPort <= 65535 and startPort <= endPort:
+                ports = {"valid": True, "start": startPort, "end": endPort}
+    # Check if port is a number
+    elif str(port).isdigit():
+        # Check that port is in range
+        if 1 <= int(port) <= 65535:
+            ports = {"valid": True, "start": int(port), "end": int(port)}
+    # Return our dictionary
+    return ports
 
 # validate_date_format() checks if a date string is in the format mm/dd/yyyy and is a future date
 def validate_date_format(dateStr):
@@ -3289,9 +3345,10 @@ def get_firewall_rules(server, user, key, iface):
         rules["ec"] = 3 if not check_auth(server, user, key) else rules["ec"]    # Return exit code 3 if we could not sign in
     # Check that authentication succeeded
     if rules["ec"] == 2:
-        # Check if our interface is valid
-        ifaces = get_interfaces(server, user, key)
-        iface = find_interface_pfid(server, user, key, iface, ifaces)["pf_id"]
+        ifaces = get_interfaces(server, user, key)    # Get a dictionary of our configured interfaces
+        iface = find_interface_pfid(server, user, key, iface, ifaces)["pf_id"]    # Save our interfaces pfID
+        rules["rules"]["acl_interface"] = iface    # Save what interface this ACL is for
+        # Check if our interface is valid (not empty string)
         if iface != "":
             # Check that we had permissions for this page
             getRuleIds = http_request(url + "/firewall_rules.php?if=" + iface, {}, {}, {}, 45, "GET")    # Save our GET HTTP response
@@ -3461,8 +3518,115 @@ def get_firewall_rules(server, user, key, iface):
     # Return our dictionary
     return rules
 
+# add_firewall_rule() adds a new basic firewall rule to a specified interface
+def add_firewall_rule(server, user, key, iface, type, ipver, proto, ivSrc, src, srcBit, srcPort, ivDst, dst, dstBit, dstPort, gw, descr, log, pos, noPort):
+    # Local variables
+    ruleAdded = 2    # Init our return value as 2 (error)
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
+    currentRules = get_firewall_rules(server, user, key, iface)    # Pull our existing firewall rules for this interface
+    # Check that we were able to pull our rules successfully
+    if currentRules["ec"] == 0:
+        # Check our port value
+        srcPortCheck = validate_port_range(srcPort)    # Check if our src port is valid and capture the start and end port
+        dstPortCheck = validate_port_range(dstPort)    # Check if our dst port is valid and capture the start and end port
+        if srcPortCheck["valid"] or noPort == True:
+            if dstPortCheck["valid"] or noPort == True:
+                # Format our POST data dictionary
+                rulePostData = {
+                    "__csrf_magic": get_csrf_token(url + "/firewall_rules_edit.php","GET"),
+                    "interface": currentRules["rules"]["acl_interface"],
+                    "after": "-1" if pos.lower() == "top" else None,
+                    "type": type,
+                    "ipprotocol": ipver,
+                    "proto": proto,
+                    "srcnot": "yes" if ivSrc == True else "",
+                    "srctype": "network",
+                    "src": src,
+                    "srcmask": srcBit,
+                    "srcbeginport_cust": str(srcPortCheck["start"]),
+                    "srcendport_cust": str(srcPortCheck["end"]),
+                    "dstnot": "yes" if ivDst == True else "",
+                    "dsttype": "network",
+                    "dst": dst,
+                    "dstmask": dstBit,
+                    "dstbeginport_cust": str(dstPortCheck["start"]) if not noPort else "",
+                    "dstendport_cust": str(dstPortCheck["end"]) if not noPort else "",
+                    "gateway": gw,
+                    "descr": descr,
+                    "log": "yes" if log == True else "",
+                    "save": "Save"
+                }
+                ruleSaveData = {"apply": "Apply Changes", "__csrf_magic": get_csrf_token(url + "/firewall_rules.php", "GET")}
+                # Run our POST request to add the new rule and apply our changes
+                postRule = http_request(url + "/firewall_rules_edit.php", rulePostData, {}, {}, 45, "POST")
+                savePostRule = http_request(url + "/firewall_rules.php", ruleSaveData, {}, {}, 45, "POST")
+                updateRules = get_firewall_rules(server, user, key, iface)    # Pull our updated firewall rules for this interface
+                # Check that we updated our dictionary
+                if updateRules["ec"] == 0:
+                    ruleKey = list(updateRules["rules"]["user_rules"].keys())[0] if pos == "top" else list(updateRules["rules"]["user_rules"].keys())[-1]    # Determnine the rule's ACL position
+                    valuesList = ["type","src","dst","proto","descr","log"]    # Create a list of values to verify
+                    valueMatch = False
+                    # Loop through each value to check and ensure it is the same
+                    for v in valuesList:
+                        valueMatch = False    # Assign a bool to track when our values match
+                        if rulePostData[v] == updateRules["rules"]["user_rules"][ruleKey][v]:
+                            valueMatch = True
+                        else:
+                            break
+                    if valueMatch:
+                        ruleAdded = 0    # Assign exit code 0 (success)
+            # If our dest port or port range is invalid
+            else:
+                ruleAdded = 5    # Return exit code 5 (invalid dest port)
+        # If our source port or port range is invalid
+        else:
+            ruleAdded = 4    # Return exit code 4 (invalid source port)
+    # If we were not able to pull our current firewall rules, return the exit code of get_firewall_rules()
+    else:
+        ruleAdded = currentRules["ec"]
+    # Return our exit code
+    return ruleAdded
+
+# del_firewall_rule() removes a firewall rule entry from a specified interface's ACL
+def del_firewall_rule(server, user, key, iface, ruleId):
+    # Local variables
+    ruleDel = 2    # Init our return value as 2 (error)
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
+    currentRules = get_firewall_rules(server, user, key, iface)    # Get our current firewall ACL
+    # Check that we pulled our ACL without error
+    if currentRules["ec"] == 0:
+        # Check if our rule ID is in the current ACL
+        if ruleId in currentRules["rules"]["user_rules"]:
+            # Format our POST dictionaries
+            delRulePostData = {
+                "__csrf_magic": get_csrf_token(url + "/firewall_rules.php?if=" + currentRules["rules"]["acl_interface"], "GET"),
+                "act": "del",
+                "if": currentRules["rules"]["acl_interface"],
+                "id": ruleId
+            }
+            ruleSaveData = {"apply": "Apply Changes", "__csrf_magic": get_csrf_token(url + "/firewall_rules.php", "GET")}
+            # Make our POST requests
+            delRulePost = http_request(url + "/firewall_rules.php", delRulePostData, {}, {}, 45, "POST")
+            savePost = http_request(url + "/firewall_rules.php", ruleSaveData, {}, {}, 45, "POST")
+            updateRules = get_firewall_rules(server, user, key, iface)  # Update our ACL dict
+            # Check that our rule was deleted
+            if ruleId in updateRules["rules"]["user_rules"]:
+                if currentRules["rules"]["user_rules"][ruleId] != updateRules["rules"]["user_rules"][ruleId]:
+                    ruleDel = 0    # Return our success exit code
+            else:
+                ruleDel = 0    # Return our success exit code
+        # If our rule ID was not found
+        else:
+            ruleDel = 5    # Return exit code 4 (rule not found)
+    # If we encountered an error pulling our current rules, return error returned by get_firewall_rules()
+    else:
+        ruleDel = currentRules["ec"]
+    # Return our exit code
+    return ruleDel
+
 # get_firewall_aliases() pulls aliases information from pfSense and saves it to a Python dictionary
 def get_firewall_aliases(server, user, key):
+    # Local variables
     aliases = {"ec" : 2, "aliases" : {}}    # Pre-define our dictionary to track alias values and errors
     url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
      # Check for errors and assign exit codes accordingly
@@ -4564,8 +4728,10 @@ def main():
                         transProto = value["proto"].upper()    # Save our transport protocol in uppercase
                         formatProto = "ANY" if transProto == ipProto else transProto + ipProto    # Determine how to display our IP and transport protocols
                         proto = structure_whitespace(formatProto,10," ", True) + " "   # Create our type data
-                        srcFormat = value["src_net"] if value["src_net"] != "" else value["src"]     # Determine which source value to print
-                        dstFormat = value["dst_net"] if value["dst_net"] != "" else value["dst"]
+                        srcNegated = "!" if value["srcnot"] == "yes" else ""    # Add ! char if context is inverted
+                        dstNegated = "!" if value["dstnot"] == "yes" else ""    # Add ! char if context is inverted
+                        srcFormat = srcNegated + value["src_net"] if value["src_net"] != "" else srcNegated + value["src"]     # Determine which source value to print
+                        dstFormat = dstNegated + value["dst_net"] if value["dst_net"] != "" else dstNegated + value["dst"]    # Determine which dest value to print
                         id = structure_whitespace(value["id"],5," ", True) + " "   # Create our ID data
                         type = structure_whitespace(value["type"],6," ", True) + " "   # Create our type data
                         src = structure_whitespace("*" if srcFormat == "any" else srcFormat,25," ", True) + " "     # Create our SOURCE
@@ -4588,21 +4754,21 @@ def main():
                         elif ruleFilter.startswith(("--source=","-s=")):
                             srcExp = ruleFilter.replace("--source=","").replace("-s=","")    # Remove our filter identifier to capture our source expression
                             # Check that our expression matches before printing
-                            if value["src"].startswith(srcExp):
+                            if srcFormat.startswith(srcExp):
                                 print(header) if not headPrinted else None
                                 headPrinted = True
                                 print(data)
                         elif ruleFilter.startswith(("--destination=","-d=")):
                             dstExp = ruleFilter.replace("--destination=","").replace("-d=","")    # Remove our filter identifier to capture our source expression
                             # Check that our expression matches before printing
-                            if value["dst"].startswith(dstExp):
+                            if dstFormat.startswith(dstExp):
                                 print(header) if not headPrinted else None
                                 headPrinted = True
                                 print(data)
                         elif ruleFilter.startswith(("--protocol=","-p=")):
                             proExp = ruleFilter.replace("--protocol=","").replace("-p=","")    # Remove our filter identifier to capture our source expression
                             # Check that our expression matches before printing
-                            if formatProto.startswith(proExp):
+                            if formatProto == proExp:
                                 print(header) if not headPrinted else None
                                 headPrinted = True
                                 print(data)
@@ -4651,6 +4817,146 @@ def main():
                 else:
                     print(get_exit_message(getRules["ec"], pfsenseServer, pfsenseAction, iface, ""))
                     sys.exit(getRules["ec"])
+
+            # Assign functions for flag --add-rule
+            elif pfsenseAction == "--add-rule":
+                # Action variables
+                availProtos = ["any","tcp","udp","tcp/udp","icmp"]    # Assign list of available protocols
+                portProtos = ["tcp","udp","tcp/udp"]    # Assign a list of protocols that allow ports
+                invertSrc = False    # Init our invert source match to False
+                invertDst = False    # Init our invert dest match to False
+                pos = "top" if "--top" in sys.argv else ""  # If user requests option for the rule to be added to top of ACL, assign value "top"
+                iface = thirdArg if len(sys.argv) > 3 else input("Interface: ")    # Get our user input for the interface ACL to add to, or prompt for input if none
+                type = filter_input(fourthArg).lower() if len(sys.argv) > 4 else input("Rule type [pass,block,reject]: ").lower()    # Get our user input for ACL type, or prompt user if none
+                ipver = filter_input(fifthArg).lower() if len(sys.argv) > 5 else input("IP protocol version [ipv4]: ")    # Get our user input for IP protocol type, or prompt user if none
+                ipver = "inet6" if ipver == "ipv6" else ipver    # Swap our ipv6 input for inet6 as required by POST data form
+                ipver = "inet" if ipver == "ipv4" else ipver    # Swap our ipv4 input for inet as required by POST data form
+                proto = sixthArg.lower() if len(sys.argv) > 6 else input("Protocol [" + ",".join(availProtos) + "]: ")    # Get our user input for protocol type, or prompt user if none
+                noPort = True if proto not in portProtos else False    # Set a bool indicating the we require a port for this rule
+                # Gather remaining input differently if a port is required
+                if not noPort:
+                    source = seventhArg.lower() if len(sys.argv) > 7 else input("Source address: ")    # Get our user input for source address, or prompt user if none
+                    sourcePort = filter_input(eighthArg).lower() if len(sys.argv) > 8 else input("Source port (port range hyphen separated): ")    # Get our user input for source ports, or prompt user if none
+                    dest = ninthArg.lower() if len(sys.argv) > 9 else input("Destination address: ")    # Get our user input for dest address, or prompt user if none
+                    destPort = filter_input(tenthArg).lower() if len(sys.argv) > 10 else input("Destination port (port range hyphen separated): ")    # Get our user input for dest port, or prompt user if none
+                    gw = filter_input(eleventhArg) if len(sys.argv) > 11 else input("Gateway [blank for none]: ")    # Get our user input for gateway, or prompt user for input
+                    gw = "" if gw.lower() in ["default","none"] else gw    # Swap out default or none input for empty string as required by POST data form
+                    log = filter_input(twelfthArg) if len(sys.argv) > 12 else input("Log rule matches [yes,no]: ")    # Get our user input for logging, or prompt user for input
+                    logBool = True if log == "yes" else False    # Swap out our "no" entry for blank string as required by POST data form
+                    descr = thirteenthArg if len(sys.argv) > 13 else input("Rule description: ")    # Get our user input for description or prompt user for input if none
+                    user = fifteenthArg if fourteenthArg == "-u" and fifteenthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                    key = seventeenthArg if sixteenthArg == "-p" and seventeenthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                # If our protocol does not require a port
+                else:
+                    sourcePort = ""    # Default our source port blank
+                    destPort = ""    # Default our dest port to blank
+                    source = seventhArg.lower() if len(sys.argv) > 7 else input("Source address: ")    # Get our user input for source address, or prompt user if none
+                    dest = eighthArg.lower() if len(sys.argv) > 8 else input("Destination address: ")    # Get our user input for dest address, or prompt user if none
+                    gw = filter_input(ninthArg) if len(sys.argv) > 9 else input("Gateway [blank for none]: ")    # Get our user input for gateway, or prompt user for input
+                    gw = "" if gw.lower() in ["default","none"] else gw    # Swap out default or none input for empty string as required by POST data form
+                    log = filter_input(tenthArg) if len(sys.argv) > 10 else input("Log rule matches [yes,no]: ")    # Get our user input for logging, or prompt user for input
+                    logBool = True if log == "yes" else False    # Swap out our "no" entry for blank string as required by POST data form
+                    descr = eleventhArg if len(sys.argv) > 11 else input("Rule description: ")    # Get our user input for description or prompt user for input if none
+                    user = thirteenthArg if twelfthArg == "-u" and thirteenthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                    key = fifteenthArg if fourteenthArg == "-p" and fifteenthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                ### INPUT VALIDATION ###
+                # Check our rule type
+                if type in ["pass","block","reject"]:
+                    # Check if our IP version is valid
+                    if ipver in ["inet","inet6","any"]:
+                        # Check if our protocol is valid
+                        if proto in availProtos:
+                            # Check if our source address contains our invert chars (!-?~)
+                            if source.startswith(("!","-","?","~")):
+                                invertSrc = True    # Assign our invert source bool to True for use in our function
+                                source = source.strip("!-?~")    # Remove the ! from our source address
+                            # Check if our source includes a CIDR
+                            srcBit = "32"  # Assign a default bit count
+                            if "/" in source:
+                                srcCidrList = source.split("/")    # Split our CIDR into a list containing the address and bitmask
+                                if len(srcCidrList) == 2 and srcCidrList[1].isdigit():
+                                    # Check if our bitmask is within range
+                                    if 1 <= int(srcCidrList[1]) <= 32:
+                                        srcBit = srcCidrList[1]    # Save our bitmask
+                                        source = srcCidrList[0]    # Save our address
+                                    # If our bitmask is invalid
+                                    else:
+                                        print(get_exit_message("invalid_bitmask", pfsenseServer, pfsenseAction, srcCidrList[1], ""))
+                                        sys.exit(1)
+                            # Check that our source IP is valid
+                            if validate_ip(source):
+                                # Check if our dest address contains our invert char (!)
+                                if dest.startswith(("!","-","?","~")):
+                                    invertDst = True    # Assign our invert dest bool to True for use in our function
+                                    dest = dest.strip("!-?~")    # Remove the ! from our dest address
+                                # Check if our dest includes a CIDR
+                                dstBit = "32"  # Assign a default bit count
+                                if "/" in dest:
+                                    dstCidrList = dest.split("/")    # Split our CIDR into a list containing the address and bitmask
+                                    if len(dstCidrList) == 2 and dstCidrList[1].isdigit():
+                                        # Check if our bitmask is within range
+                                        if 1 <= int(dstCidrList[1]) <= 32:
+                                            dstBit = dstCidrList[1]    # Save our bitmask
+                                            dest = dstCidrList[0]    # Save our address
+                                        # If our bitmask is invalid
+                                        else:
+                                            print(get_exit_message("invalid_bitmask", pfsenseServer, pfsenseAction, dstCidrList[1], ""))
+                                            sys.exit(1)
+                                # Check if our dest IP is valid
+                                if validate_ip(dest):
+                                    # Check that our log is valid
+                                    if log in ["yes",""]:
+                                        # Run our function to add the rule
+                                        addRuleEc = add_firewall_rule(pfsenseServer, user, key, iface, type, ipver, proto, invertSrc, source, srcBit, sourcePort, invertDst, dest, dstBit, destPort, gw, descr, logBool, pos, noPort)
+                                        print(get_exit_message(addRuleEc, pfsenseServer, pfsenseAction, iface, ""))
+                                        sys.exit(addRuleEc)
+                                    # If our log is invalid
+                                    else:
+                                        print(get_exit_message("invalid_log", pfsenseServer, pfsenseAction, log, ""))
+                                        sys.exit()
+                                # If our destination IP is invalid
+                                else:
+                                    print(get_exit_message("invalid_dest", pfsenseServer, pfsenseAction, dest, ""))
+                            # If our source IP is invalid
+                            else:
+                                print(get_exit_message("invalid_source", pfsenseServer, pfsenseAction, source, ""))
+                                sys.exit(1)
+                        # If our protocol is invalid
+                        else:
+                            print(get_exit_message("invalid_protocol", pfsenseServer, pfsenseAction, proto, ",".join(availProtos)))
+                            sys.exit(1)
+                    # If our IP version is invalid
+                    else:
+                        print(get_exit_message("invalid_ipver", pfsenseServer, pfsenseAction, ipver, ""))
+                        sys.exit(1)
+                # If our rule type is invalid
+                else:
+                    print(get_exit_message("invalid_type", pfsenseServer, pfsenseAction, type, ""))
+                    sys.exit(1)
+
+            # Assign functions for flag --del-rule
+            elif pfsenseAction == "--del-rule":
+                # Action variables
+                iface = thirdArg if len(sys.argv) > 3 else input("Interface: ")    # Save our users interface input, or prompt for input if none
+                ruleId = filter_input(fourthArg) if len(sys.argv) > 4 else input("Rule ID: ")    # Save our users rule ID input, or prompt for input if none
+                user = sixthArg if fifthArg == "-u" and sixthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = eighthArg if seventhArg == "-p" and eighthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                noConfirm = True if "--force" in sys.argv else False    # Track if user wants to remove the rule without user confirmation beforehand (option --force)
+                # INPUT VALIDATION
+                if ruleId.isdigit():
+                    # Ask user to confirm deletion if not requested otherwise
+                    if not noConfirm:
+                        usrCon = input("WARNING: Firewall rule deletions cannot be undone.\nAre you sure you would like to remove firewall rule ID `" + ruleId + "` from " + iface + "? [y/n]")
+                        if usrCon.lower() != "y":
+                            sys.exit(0)
+                    # Run our deletion command
+                    ruleDel = del_firewall_rule(pfsenseServer, user, key, iface, ruleId)
+                    print(get_exit_message(ruleDel, pfsenseServer, pfsenseAction, iface, ruleId))
+                    sys.exit(ruleDel)
+                # If our rule ID is invalid
+                else:
+                    print(get_exit_message("invalid_id", pfsenseServer, pfsenseAction, ruleId, ""))
+                    sys.exit()
 
             # Assign functions for flag --read-aliases
             elif pfsenseAction == "--read-aliases":
