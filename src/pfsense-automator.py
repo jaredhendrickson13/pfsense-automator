@@ -534,6 +534,20 @@ def get_exit_message(ec, server, command, data1, data2):
             "invalid_syntax" : "Error: Invalid arguments. Expected syntax: `pfsense-controller <SERVER> --add-dns <HOST> <DOMAIN> <IP> <DESCR>`",
             "descr": structure_whitespace("  --add-dns", cmdFlgLen, " ", True) + " : Add a new DNS host override to DNS Resolver",
         },
+        # Error/success messages for --read-rules
+        "--read-rules" : {
+            3 : globalAuthErrMsg,
+            4 : "Error: Interface `" + data1 + "` does not exist",
+            6 : globalPlatformErrMsg,
+            10 : globalDnsRebindMsg,
+            15: globalPermissionErrMsg,
+            "invalid_filter": "Error: Invalid filter `" + data1 + "`",
+            "read_err" : "Error: Unexpected error reading Firewall Rules from pfSense",
+            "export_err" : "Error: export directory `" + data1 + "` does not exist",
+            "export_success" : "Successfully exported Firewall Rule data to " + data1,
+            "export_fail" : "Failed to export Firewall Rules data as JSON",
+            "descr": structure_whitespace("  --read-rules", cmdFlgLen, " ", True) + " : Read configured firewall rules from Firewall > Rules",
+        },
         # Error/success messages for --read-aliases
         "--read-aliases" : {
             3 : globalAuthErrMsg,
@@ -3262,6 +3276,191 @@ def set_wc_certificate(server, user, key, certName):
     # Return our exit code
     return wccCheck
 
+# get_firewall_rules() pulls the ACL for a specified interface and returns the rules
+def get_firewall_rules(server, user, key, iface):
+    # Local variables
+    rules = {"ec" : 2, "rules" : {"antilockout": False, "bogons": False, "private": False, "user_rules": {}}}    # Pre-define our dictionary to track alias values and errors
+    url = wcProtocol + "://" + server + ":" + str(wcProtocolPort)    # Populate our base URL
+     # Check for errors and assign exit codes accordingly
+    rules["ec"] = 10 if check_dns_rebind_error(url) else rules["ec"]    # Return exit code 10 if dns rebind error found
+    rules["ec"] = 6 if not validate_platform(url) else rules["ec"]    # Check that our URL appears to be pfSense
+    # Check if we have not encountered an error that would prevent us from authenticating
+    if rules["ec"] == 2:
+        rules["ec"] = 3 if not check_auth(server, user, key) else rules["ec"]    # Return exit code 3 if we could not sign in
+    # Check that authentication succeeded
+    if rules["ec"] == 2:
+        # Check if our interface is valid
+        ifaces = get_interfaces(server, user, key)
+        iface = find_interface_pfid(server, user, key, iface, ifaces)["pf_id"]
+        if iface != "":
+            # Check that we had permissions for this page
+            getRuleIds = http_request(url + "/firewall_rules.php?if=" + iface, {}, {}, {}, 45, "GET")    # Save our GET HTTP response
+            getRuleEdit = http_request(url + "/firewall_rules_edit.php", {}, {}, {}, 45, "GET")  # Save our GET HTTP response
+            if check_permissions(getRuleIds) and check_permissions(getRuleEdit):
+                # GATHER PFSENSE RULE IDs & FW STATE DATA/STATISTICS
+                # Loop through possible system rules and check if our rules list contains the system rules
+                systemRules = ["antilockout","private","bogons"]
+                for r in systemRules:
+                    if "<tr id=\"" + r + "\">" in getRuleIds["text"]:
+                        rules["rules"][r] = True    # Change default false value to True
+                # Check if we have user defined rules, if so capture only the table between the <tbody> tags
+                if "<tbody class=\"user-entries\">" in getRuleIds["text"]:
+                    usrRuleBody = getRuleIds["text"].split("<tbody class=\"user-entries\">")[1].split("</tbody>\n\t\t\t</table>")[0]
+                    # Check that our user table has table rows, if so split the string into a list of rows
+                    if "<tr" in usrRuleBody:
+                        userRuleRows = usrRuleBody.split("<tr")
+                        # Loop through our rows and pull the rule ID from each row
+                        for row in userRuleRows:
+                            # Check that our ID field exists
+                            if "ondblclick=\"document.location='firewall_rules_edit.php?id=" in row:
+                                id = row.split("ondblclick=\"document.location='firewall_rules_edit.php?id=")[1].split("\'")[0]    # The value before our first `"` char is our ID
+                                # Check if our ID is a number
+                                if id.isdigit():
+                                    # Create a nested dictionary for each user rule
+                                    rules["rules"]["user_rules"][id] = {
+                                        "id": id,
+                                        "state_data": {
+                                            "state_rule_id": "",
+                                            "state_tracking_id": "",
+                                            "state_evaluations": "",
+                                            "state_bytes": "",
+                                            "state_packets": "",
+                                            "state_states": "",
+                                            "state_creations": ""
+                                        }
+                                    }
+                                    # Check if a custom gateway was used for this rule, otherwise assume default
+                                    if "<i class=\"fa fa-cog\" title=\"advanced setting: gateway" in row:
+                                        rules["rules"]["user_rules"][id]["gateway"] = row.split("<i class=\"fa fa-cog\" title=\"advanced setting: gateway")[1].split("\">")[0].replace(" ","")
+                                    else:
+                                        rules["rules"]["user_rules"][id]["gateway"] = ""
+                                    # Check for a state table ID for this rule, save it to our dict if exists and is a number
+                                    if "<td><a href=\"diag_dump_states.php?ruleid=" in row:
+                                        stateId = row.split("<td><a href=\"diag_dump_states.php?ruleid=")[1].split("\"")[0]
+                                        rules["rules"]["user_rules"][id]["state_data"]["state_rule_id"] = stateId if stateId.isdigit() else ""
+                                        # Loop through our state data to gather state statistics and information
+                                        stateData = ["Tracking ID","evaluations", "packets", "bytes", "states", "state creations"]     # Create list of data fields to capture
+                                        tableDataContent = "<br>" + row.split("data-content=\"")[1].split("\"")[0] + "<br>" if "data-content=\"" in row else ""    # Capture the entire data content if found
+                                        for sd in stateData:
+                                            # Check that the field exists for this data
+                                            if "<br>" + sd + ":" in tableDataContent:
+                                                sdValue = tableDataContent.split("<br>" + sd + ":")[1].split("<br>")[0].replace(" ", "")     # Capture the data for each field between the <br> tags
+                                                rules["rules"]["user_rules"][id]["state_data"]["state_" + sd.replace("state ", "").replace(" ", "_").lower()] = sdValue    # Save our captured value into the corresponding dict key
+                # GATHER INDIVIDUAL FIREWALL RULE CONFIGURATION
+                # Loop through each of our user rule IDs to gather data
+                for urId,urDict in rules["rules"]["user_rules"].items():
+                    # GET the edit page for this ID and read it's contents
+                    urGetData = http_request(url + "/firewall_rules_edit.php?id=" + urId, {}, {}, {}, 45, "GET")
+                    ### SINGLE SELECT FORMS: Get the values for each of our single option <select> forms ###
+                    sSelectForms = ["type","interface","ipprotocol","proto","icmptype[]","srctype","srcbeginport","srcendport","srcmask","dsttype",
+                                   "dstbeginport","dstendport","dstmask","os","dscp","statetype","vlanprio","vlanprioset","sched",
+                                   "dnpipe","pdnpipe","ackqueue","defaultqueue"]
+                    # Loop through each of our expected single select form names and get there configured values
+                    for ssf in sSelectForms:
+                        # Default each of these values to blank string if it does not exist already
+                        if ssf not in rules["rules"]["user_rules"][urId]:
+                            rules["rules"]["user_rules"][urId][ssf] = ""
+                        expTag1 = "<select class=\"form-control\" name=\"" + ssf + "\" id=\"" + ssf + "\">"    # Define the tag we expect to find
+                        expTag2 = "<select class=\"form-control pfIpMask\" name=\"" + ssf + "\" id=\"" + ssf + "\">"
+                        expTag3 = "<select class=\"form-control\" name=\"" + ssf + "\" id=\"" + ssf + "\" multiple=\"multiple\">"
+                        # Check that this form exists
+                        if expTag1 in urGetData["text"]:
+                            selectData = urGetData["text"].split(expTag1)[1].split("</select>")[0]    # Capture all data between our select tags
+                            # Check that we have options
+                            if "<option" in selectData:
+                                optList = selectData.split("<option")    # Split our options into a list
+                                # Loop through our options to find the selected value
+                                for opt in optList:
+                                    if "selected>" in opt:
+                                        rules["rules"]["user_rules"][urId][ssf] = opt.split("value=\"")[1].split("\"")[0]
+                        # Check that an alternate select form exists with this name
+                        elif expTag2 in urGetData["text"]:
+                            selectData = urGetData["text"].split(expTag2)[1].split("</select>")[0]    # Capture all data between our select tags
+                            # Check that we have options
+                            if "<option" in selectData:
+                                optList = selectData.split("<option")    # Split our options into a list
+                                # Loop through our options to find the selected value
+                                for opt in optList:
+                                    if "selected>" in opt:
+                                        rules["rules"]["user_rules"][urId][ssf] = opt.split("value=\"")[1].split("\"")[0]
+                        # Check that an alternate select form exists with this name
+                        elif expTag3 in urGetData["text"]:
+                            selectData = urGetData["text"].split(expTag3)[1].split("</select>")[0]    # Capture all data between our select tags
+                            rules["rules"]["user_rules"][urId][ssf] = []    # Define a list with our multi data listing
+                            # Check that we have options
+                            if "<option" in selectData:
+                                optList = selectData.split("<option")    # Split our options into a list
+                                # Loop through our options to find the selected value
+                                for opt in optList:
+                                    if "selected>" in opt:
+                                        rules["rules"]["user_rules"][urId][ssf].append(opt.split("value=\"")[1].split("\"")[0])
+                    ### CHECKBOX FORMS: Get the values for each of our yes/no checkbox input forms ###
+                    cbxForms = ["disabled","srcnot","dstnot","log","allowopts","disablereplyto","nopfsync","nosync"
+                                "tcpflags1_syn","tcpflags1_rst","tcpflags1_psh","tcpflags1_ack","tcpflags1_urg",
+                                "tcpflags1_ece","tcpflags1_cwr","tcpflags2_syn","tcpflags2_rst","tcpflags2_psh",
+                                "tcpflags2_ack","tcpflags2_urg","tcpflags2_ece","tcpflags2_cwr","tcpflags_any"]
+                    # Loop through each checkbox form and check it's value
+                    for cb in cbxForms:
+                        rules["rules"]["user_rules"][urId][cb] = ""    # Assign a default for each value
+                        expTag1 = "name=\"" + cb + "\""    # Define our expected tag
+                        expTag2 = "name=\'" + cb + "\'"    # Define our other expected tag
+                        # Check if the value exists
+                        if expTag1 in urGetData["text"]:
+                            cbxData = urGetData["text"].split(expTag1)[1].split(">")[0]     # Capture our input form data
+                            if "checked" in cbxData:
+                                rules["rules"]["user_rules"][urId][cb] = cbxData.split("value=\"")[1].split("\"")[0]    # Assign value if the box is checked
+                        elif expTag2 in urGetData["text"]:
+                            cbxData = urGetData["text"].split(expTag2)[1].split(">")[0]     # Capture our input form data
+                            if "checked" in cbxData:
+                                rules["rules"]["user_rules"][urId][cb] = cbxData.split("value=\'")[1].split("\'")[0]    # Assign value if the box is checked
+                    ### TEXT FORMS: Get the values for each of our text input forms ###
+                    txtForms = ["descr","tag","tagged","src","srcbeginport_cust","srcendport_cust","dst","dstbeginport_cust", "dstendport_cust"]
+                    # Loop through each text form and check it's value
+                    for txt in txtForms:
+                        rules["rules"]["user_rules"][urId][txt] = ""    # Assign a default for each value
+                        expTag = "<input class=\"form-control\" name=\"" + txt + "\""    # Define our expected tag
+                        # Check if the value exists
+                        if expTag in urGetData["text"]:
+                            txtData = urGetData["text"].split(expTag)[1].split(">")[0]     # Capture our input form data
+                            if "value=\"" in txtData:
+                                rules["rules"]["user_rules"][urId][txt] = txtData.split("value=\"")[1].split("\"")[0]    # Save value of the input field
+                    ### NUMBER FORMS: Get the values for each of our number input forms ###
+                    numForms = ["max","max-src-nodes","max-src-conn","max-src-states","max-src-conn-rate","max-src-conn-rates","statetimeout"]
+                    # Loop through each text form and check it's value
+                    for num in numForms:
+                        rules["rules"]["user_rules"][urId][num] = ""    # Assign a default for each value
+                        expTag = "id=\"" + num + "\" type=\"number\""    # Define our expected tag
+                        # Check if the value exists
+                        if expTag in urGetData["text"]:
+                            numData = urGetData["text"].split(expTag)[1].split(">")[0]     # Capture our input form data
+                            if "value=\"" in numData:
+                                rules["rules"]["user_rules"][urId][num] = numData.split("value=\"")[1].split("\"")[0]    # Save value of the input field
+                    # Add our SOURCE and DEST nets if the interface network is used as src or dst
+                    srcValue = rules["rules"]["user_rules"][urId]["src"]    # Save our source value for quick use later
+                    dstValue = rules["rules"]["user_rules"][urId]["dst"]    # Save our destination value for quick use later
+                    rules["rules"]["user_rules"][urId]["src_net"] = ""    # Default our src net value
+                    rules["rules"]["user_rules"][urId]["dst_net"] = ""    # Default our dst net value
+                    # SRC NET
+                    if srcValue in ifaces["ifaces"]:
+                        rules["rules"]["user_rules"][urId]["src_net"] = ifaces["ifaces"][srcValue]["ipaddr"] + "/" + ifaces["ifaces"][srcValue]["subnet"]
+                    elif srcValue.rstrip("ip") in ifaces["ifaces"]:
+                        rules["rules"]["user_rules"][urId]["src_net"] = ifaces["ifaces"][srcValue.rstrip("ip")]["ipaddr"]
+                    # DST NET
+                    if dstValue in ifaces["ifaces"]:
+                        rules["rules"]["user_rules"][urId]["dst_net"] = ifaces["ifaces"][dstValue]["ipaddr"] + "/" + ifaces["ifaces"][dstValue]["subnet"]
+                    elif dstValue.rstrip("ip") in ifaces["ifaces"]:
+                        rules["rules"]["user_rules"][urId]["dst_net"] = ifaces["ifaces"][dstValue.rstrip("ip")]["ipaddr"]
+                    # Assign our success exit code
+                    rules["ec"] = 0
+            # If permission was denied, return exit code (permission denied)
+            else:
+                rules["ec"] = 15
+        # If our interface was invalid return exit code 4 (iface not found)
+        else:
+            rules["ec"] = 4
+    # Return our dictionary
+    return rules
+
 # get_firewall_aliases() pulls aliases information from pfSense and saves it to a Python dictionary
 def get_firewall_aliases(server, user, key):
     aliases = {"ec" : 2, "aliases" : {}}    # Pre-define our dictionary to track alias values and errors
@@ -4314,6 +4513,144 @@ def main():
                 else:
                     print(get_exit_message(pfVersion["ec"],pfsenseServer,pfsenseAction,"",""))    # Print our error msg
                     sys.exit(pfVersion["ec"])    # Exit on our non-zero function return code
+
+            # Assign functions for flag --read-rules
+            elif pfsenseAction == "--read-rules":
+                # Action variables
+                iface = thirdArg if len(sys.argv) > 3 else input("Interface: ")    # Save our inline argumnet for interface, or prompt if none
+                ruleFilter = fourthArg if len(sys.argv) > 4 else input("Filter [blank if none]:")   # Assign our filter argument to the fourth slot
+                user = sixthArg if fifthArg == "-u" and sixthArg is not None else input("Please enter username: ")  # Parse passed in username, if empty, prompt user to enter one
+                key = eighthArg if seventhArg == "-p" and eighthArg is not None else getpass.getpass("Please enter password: ")  # Parse passed in passkey, if empty, prompt user to enter one
+                getRules = get_firewall_rules(pfsenseServer, user, key, iface)    # Get our alias data dictionary
+                idHeader = structure_whitespace("ID",5,"-", False) + " "   # Create our ID header
+                typeHeader = structure_whitespace("TYPE",6,"-", False) + " "    # Create our TYPE header
+                protocolHeader = structure_whitespace("PROTOCOL", 10,"-", True) + " "    # Create our PROTOCOL header
+                srcHeader = structure_whitespace("SOURCE",25,"-", True) + " "    # Create our SOURCE header
+                dstHeader = structure_whitespace("DESTINATION",25,"-", True) + " "    # Create our DESTINATION header
+                gwHeader = structure_whitespace("GATEWAY",12,"-", True) + " "    # Create our GATEWAY header
+                descrHeader = structure_whitespace("DESCRIPTION",30,"-", True) + " "    # Create our DESCRIPTION header
+                header = idHeader + typeHeader + protocolHeader + srcHeader + dstHeader + gwHeader + descrHeader   # Piece our header together
+                # Check that we pulled our rules without error
+                if getRules["ec"] == 0:
+                    # FORMAT OUR STATIC SYSTEM RULES
+                    defId = structure_whitespace("",5," ",True) + " "    # Format our default ID for system rules
+                    defProt = structure_whitespace("ANY",10," ",True) + " "   # Format our default PROTOCOL for system rules
+                    # BOGONS
+                    bogonType = structure_whitespace("block",6," ", True) + " "
+                    bogonSrc = structure_whitespace("Any unassigned by IANA",25," ",True) + " "
+                    bogonDst = structure_whitespace("*",25," ",True) + " "
+                    bogonGw = structure_whitespace("*",12," ",True) + " "
+                    bogonDescr = structure_whitespace("Block bogon networks",30," ",True) + " "
+                    bogonData = defId + bogonType + defProt + bogonSrc + bogonDst + bogonGw + bogonDescr
+                    # RFC1918
+                    prvType = structure_whitespace("block",6," ", True) + " "
+                    prvSrc = structure_whitespace("RFC1918 networks",25," ",True) + " "
+                    prvDst = structure_whitespace("*",25," ",True) + " "
+                    prvGw = structure_whitespace("*",12," ",True) + " "
+                    prvDescr = structure_whitespace("Block private networks",30," ",True) + " "
+                    prvData = defId + prvType + defProt + prvSrc + prvDst + prvGw + prvDescr
+                    # ANTILOCKOUT
+                    alType = structure_whitespace("pass", 6, " ", True) + " "
+                    alSrc = structure_whitespace("*", 25, " ", True) + " "
+                    alDst = structure_whitespace("LAN address:22,80,443", 25, " ", True) + " "
+                    alGw = structure_whitespace("*", 12, " ", True) + " "
+                    alDescr = structure_whitespace("Anti-lockout rule", 30, " ", True) + " "
+                    alData = defId + alType + defProt + alSrc + alDst + alGw + alDescr
+                    # CHECK OUR USERS FILTER AND READ INFORMATION ACCORDINGLY
+                    headPrinted = False    # Create a counter for our loop
+                    for key,value in getRules["rules"]["user_rules"].items():
+                        # FORMAT OUR ACL DATA VALUES
+                        ipProto = ("v" + (value["ipprotocol"].replace("inet","") + "4")).replace("v464","*").replace("64","6")    # Format our IP protocol into either *, v4, or v6
+                        transProto = value["proto"].upper()    # Save our transport protocol in uppercase
+                        formatProto = "ANY" if transProto == ipProto else transProto + ipProto    # Determine how to display our IP and transport protocols
+                        proto = structure_whitespace(formatProto,10," ", True) + " "   # Create our type data
+                        srcFormat = value["src_net"] if value["src_net"] != "" else value["src"]     # Determine which source value to print
+                        dstFormat = value["dst_net"] if value["dst_net"] != "" else value["dst"]
+                        id = structure_whitespace(value["id"],5," ", True) + " "   # Create our ID data
+                        type = structure_whitespace(value["type"],6," ", True) + " "   # Create our type data
+                        src = structure_whitespace("*" if srcFormat == "any" else srcFormat,25," ", True) + " "     # Create our SOURCE
+                        dst = structure_whitespace("*" if dstFormat == "any" else dstFormat,25," ", True) + " "    # Create our DESTINATION
+                        gw = structure_whitespace("*" if value["gateway"] == "" else value["gateway"],12," ", True) + " "    # Create our GATEWAY
+                        descr = structure_whitespace(value["descr"],30," ", True) + " "    # Create our DESCRIPTION
+                        data = id + type + proto + src + dst + gw + descr   # Piece our data together
+                        # Check our user filter and print data accordingly
+                        if ruleFilter.lower() in ["-a", "--all", ""]:
+                            print(header) if not headPrinted else None
+                            # Check if our system rules are using
+                            if getRules["rules"]["antilockout"] == True and not headPrinted:
+                                print(alData)
+                            if getRules["rules"]["bogons"] == True and not headPrinted:
+                                print(bogonData)
+                            if getRules["rules"]["private"] == True and not headPrinted:
+                                print(prvData)
+                            headPrinted = True
+                            print(data)
+                        elif ruleFilter.startswith(("--source=","-s=")):
+                            srcExp = ruleFilter.replace("--source=","").replace("-s=","")    # Remove our filter identifier to capture our source expression
+                            # Check that our expression matches before printing
+                            if value["src"].startswith(srcExp):
+                                print(header) if not headPrinted else None
+                                headPrinted = True
+                                print(data)
+                        elif ruleFilter.startswith(("--destination=","-d=")):
+                            dstExp = ruleFilter.replace("--destination=","").replace("-d=","")    # Remove our filter identifier to capture our source expression
+                            # Check that our expression matches before printing
+                            if value["dst"].startswith(dstExp):
+                                print(header) if not headPrinted else None
+                                headPrinted = True
+                                print(data)
+                        elif ruleFilter.startswith(("--protocol=","-p=")):
+                            proExp = ruleFilter.replace("--protocol=","").replace("-p=","")    # Remove our filter identifier to capture our source expression
+                            # Check that our expression matches before printing
+                            if formatProto.startswith(proExp):
+                                print(header) if not headPrinted else None
+                                headPrinted = True
+                                print(data)
+                        elif ruleFilter.startswith(("--ip-version=","-i=")):
+                            ipExp = ruleFilter.replace("--ip-version=","").replace("-i=","")    # Remove our filter identifier to capture our source expression
+                            # Check that our expression matches before printing
+                            if ipExp.lower() == ipProto:
+                                print(header) if not headPrinted else None
+                                headPrinted = True
+                                print(data)
+                        elif ruleFilter.startswith(("--gateway=","-g=")):
+                            gwExp = ruleFilter.replace("--gateway=","").replace("-g=","")    # Remove our filter identifier to capture our source expression
+                            # Check that our expression matches before printing
+                            if gw.startswith(gwExp):
+                                print(header) if not headPrinted else None
+                                headPrinted = True
+                                print(data)
+                        # If user wants to print the JSON output
+                        elif ruleFilter.lower() in ("--read-json", "-rj"):
+                            print(json.dumps(getRules["rules"]))   # Print our JSON data
+                            break
+                        # If we want to export values as JSON
+                        elif ruleFilter.startswith(("--json=", "-j=")):
+                            jsonPath = ruleFilter.replace("-j=", "").replace("--json=", "").rstrip("/") + "/"    # Get our file path by removing the expected JSON flags
+                            jsonName = "pf-readrules-" + currentDate + ".json"    # Assign our default JSON name
+                            # Check if JSON path exists
+                            if os.path.exists(jsonPath):
+                                # Open an export file and save our data
+                                jsonExported = export_json(getRules["rules"], jsonPath, jsonName)
+                                # Check if the file now exists
+                                if jsonExported:
+                                    print(get_exit_message("export_success", pfsenseServer, pfsenseAction, jsonPath + jsonName, ""))
+                                    break    # Break the loop as we only need to perfrom this function once
+                                else:
+                                    print(get_exit_message("export_fail", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                    sys.exit(1)
+                            # Print error if path does not exist
+                            else:
+                                print(get_exit_message("export_err", pfsenseServer, pfsenseAction, jsonPath, ""))
+                                sys.exit(1)
+                        # If we did not recognize the requested filter print our error message
+                        else:
+                            print(get_exit_message("invalid_filter", pfsenseServer, pfsenseAction, ruleFilter, ""))
+                            sys.exit(1)    # Exit on non-zero status
+                # If we encountered an error pulling our rules
+                else:
+                    print(get_exit_message(getRules["ec"], pfsenseServer, pfsenseAction, iface, ""))
+                    sys.exit(getRules["ec"])
 
             # Assign functions for flag --read-aliases
             elif pfsenseAction == "--read-aliases":
