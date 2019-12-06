@@ -3,7 +3,7 @@
 # Purpose: This script is intended to install a `one folder` build of pfsense-automator on supported operating systems.
 #          The `one file` builds do not need to execute this to function but may have reduced performance
 
-# IMPORT MODULES
+# IMPORT MODULES #
 import sys
 import platform
 import os
@@ -11,18 +11,21 @@ import subprocess
 import shutil
 import getpass
 
-# CLASSES
-class colors:
+
+# CLASSES #
+class Colors:
     OK = '\033[92m'
     WARNING = '\033[93m'
     FAIL = '\033[91m'
     RESET = '\033[0m'
 
-# GLOBAL VARIABLES
+
+# GLOBAL VARIABLES #
 supported_platforms = ["Darwin","Linux","Windows","FreeBSD"]    # Create a list of our supported platforms
 exec_name = "pfsense-automator" if platform.system() != "Windows" else "pfsense-automator.exe"    # Save our executable name
-success_msg = colors.OK + "SUCCESS" + colors.RESET if platform.system() != "Windows" else "SUCCESS"   # Format our success msg
-error_msg = colors.FAIL + "ERROR  " + colors.RESET if platform.system() != "Windows" else "ERROR  "    # Format our fail msg
+success_msg = Colors.OK + "SUCCESS" + Colors.RESET if platform.system() != "Windows" else "SUCCESS"   # Format our success msg
+error_msg = Colors.FAIL + "ERROR  " + Colors.RESET if platform.system() != "Windows" else "ERROR  "    # Format our fail msg
+
 
 # FUNCTIONS
 # check_os_platform() checks what platform the target system is running
@@ -39,6 +42,7 @@ def check_os_platform():
     # Return our value
     return support
 
+
 # copy() copies files and folders to another destination
 def copy_install_dir(src, dest):
     # Local variables
@@ -52,6 +56,7 @@ def copy_install_dir(src, dest):
         copied = False    # Reinforce False value if failed
     # Return our bool
     return copied
+
 
 # check_windows_admin() checks if user is running as administrator
 def check_windows_admin():
@@ -179,6 +184,7 @@ def install(install, platform):
     # Return our install return code
     return installed
 
+
 # main() our main function that controls what the user is trying to do
 def main():
     # Local variables
@@ -190,6 +196,7 @@ def main():
         inst = install(install_mode,host_platform)    # Install on detected platforms
     else:
         print("- ERROR detecting platform. Your OS may be unsupported")
+
 
 # Run main()
 main()

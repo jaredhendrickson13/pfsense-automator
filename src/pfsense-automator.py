@@ -8,6 +8,8 @@
 # ----------------------------------------------------------------------------------------------------------------
 # IMPORT MODULES #
 from pfsensewc import *
+import signal
+
 
 # Variables
 first_arg = sys.argv[1] if len(sys.argv) > 1 else ""    # Declare 'first_arg' to populate the first argument passed in to the script

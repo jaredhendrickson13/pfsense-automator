@@ -1,22 +1,19 @@
 #!/usr/bin/python3
 # IMPORTS #
-import base64
 import datetime
 import getpass
 import html
 import io
 import json
 import os
-import pfsensexml
 import platform
-import requests
-import signal
 import socket
 import subprocess
 import sys
 import time
-import urllib3
-import xmltodict
+import requests  # Requires pip3 pkg requests
+import urllib3  # Requires pip3 pkg urllib3
+import xmltodict  # Requires pip3 pkg xmltodict
 
 # GLOBAL VARIABLES #
 req_session = requests.Session()  # Start our requests session
@@ -26,6 +23,7 @@ local_config_xml_path = "/tmp/config.xml" if debug else "/conf/config.xml"   # S
 local_systems = ["FreeBSD","Darwin","Windows","Linux"] if debug else ["FreeBSD"]    # Create a list of Operating Systems that pfSense runs on (currently only FreeBSD)
 xml_target_local = os.path.exists(local_config_xml_path) if platform.system() in local_systems else False    # Determine whether the local system is pfSense
 xml_indicator = "<pfsense>"    # Save a string that contains the XML indicator that we're working with a pfSense configuration
+
 
 # CLASSES #
 # PfaVar is a class of variables shared between different Python scripts
@@ -41,6 +39,7 @@ class XmlConfigs:
     init = False    # Save a bool to track whether our config values are populated
     master = ""    # Our master XML config
     backup = ""    # Our previous XML config
+
 
 # FUNCTIONS #
 # get_exit_message() takes an exit code and other parameters to determine what success or error message to print
@@ -772,10 +771,12 @@ def http_request(url, data, headers, files, timeout, method):
     else:
         raise ValueError("invalid HTTP method `" + method + "`")
 
+
 # update_configs() updates the XmlConfigs class
 def update_config(server, user, key):
     XmlConfigs.backup = XmlConfigs.master    # Save our current master as our backup before updating master
     XmlConfigs.master = get_pfsense_config(server, user, key, xml_target_local)["config"]    # Update master config
+
 
 # get_pfsense_config() parse the config.xml file from pfSense into a Python dictionary
 def get_pfsense_config(server, user, key, local_xml):
@@ -818,6 +819,7 @@ def get_pfsense_config(server, user, key, local_xml):
     # Return our dictionary
     return pf_config
 
+
 # convert_xml() converts our pfSense XML configuration to a Python3/JSON dictionary
 def convert_xml(xml):
     # Local variables
@@ -836,6 +838,7 @@ def convert_xml(xml):
     # Return our dictionary
     return xml_dict
 
+
 # export_json() exports a Python dictionary as a JSON file
 def export_json(dictionary, json_path, json_name):
     # Open an export file and save our data
@@ -845,6 +848,7 @@ def export_json(dictionary, json_path, json_name):
     json_exported = True if os.path.exists(json_path + json_name) else False
     # Return our boolean
     return json_exported
+
 
 # filter_input() sanitizes a string of special or otherwise malicious characters. Returns the formatted string.
 def filter_input(stf):
@@ -857,6 +861,7 @@ def filter_input(stf):
             stf = stf.replace(char,"")
     # Return filtered string
     return stf
+
 
 # structure_whitespace() takes a string and a length and adds whitespace to ensure that string matches that length
 def structure_whitespace(string, length, char, strict_length):
@@ -884,6 +889,7 @@ def structure_whitespace(string, length, char, strict_length):
     # Return our structured string
     return string
 
+
 # validate_platform()
 def validate_platform(url,req_obj):
     # Local variables
@@ -903,6 +909,7 @@ def validate_platform(url,req_obj):
     platform_confirm = True if platform_confidence > 50 else False
     # Return our bool
     return platform_confirm
+
 
 # validate_ip() attempts to parse the IP into expected data. If the IP is not valid, false is returned.
 def validate_ip(ip):
@@ -934,6 +941,7 @@ def validate_ip(ip):
     # Return boolean
     return valid_ip
 
+
 # validate_port_range() takes a port or port range (separated by -) and determine if the port range is valid
 def validate_port_range(port):
     # Local variables
@@ -957,6 +965,7 @@ def validate_port_range(port):
             ports = {"valid": True, "start": int(port), "end": int(port)}
     # Return our dictionary
     return ports
+
 
 # validate_date_format() checks if a date string is in the format mm/dd/yyyy and is a future date
 def validate_date_format(date_str):
@@ -985,6 +994,7 @@ def validate_date_format(date_str):
     # Return our bool
     return date_valid
 
+
 # check_remote_port tests if a remote port is open. This function will return True if the connection was successful.
 def check_remote_port(HOST,PORT):
     check_connect = None    # Initialize check_connect a variable to track connection statuses
@@ -1004,6 +1014,7 @@ def check_remote_port(HOST,PORT):
         port_open = True
     return port_open
 
+
 # check_ssh_access() checks if pfSense is accessible via SSH w/ pubkey auth
 def check_ssh_access(server):
     ssh_accessible = False    # Define our return bool
@@ -1022,6 +1033,7 @@ def check_ssh_access(server):
     # Return our bool
     return ssh_accessible
 
+
 # check_dns() checks the DNS server for existing A records
 def check_dns(server, user, key, host, domain):
     # Local Variables
@@ -1035,6 +1047,7 @@ def check_dns(server, user, key, host, domain):
     #Return boolean
     return record_exists
 
+
 # check_permissions() tasks an HTTP response and determines whether a permissions error was thrown
 def check_permissions(http_resp):
     # Local Variables
@@ -1045,6 +1058,7 @@ def check_permissions(http_resp):
         permit = True    # Return a true value if our response looks normal
     # Return our boolean
     return permit
+
 
 # check_dns_rebind_error() checks if access to the webconfigurator is denied due to a DNS rebind error
 def check_dns_rebind_error(url, req_obj):
@@ -1057,6 +1071,7 @@ def check_dns_rebind_error(url, req_obj):
         rebind_found = True    # If the the HTTP response contains the error message, return true
     # Return our boolean
     return rebind_found
+
 
 # check_auth() runs a basic authentication check. If the authentication is successful a true value is returned
 def check_auth(server, user, key):
@@ -1074,6 +1089,7 @@ def check_auth(server, user, key):
     else:
         auth_success = True
     return auth_success
+
 
 # check_errors() consolidates all error check functions into one
 def check_errors(server, user, key, priv_list):
@@ -1098,6 +1114,7 @@ def check_errors(server, user, key, priv_list):
     # Return our exit code
     return ec
 
+
 # get_csrf_token() makes an initial connection to pfSense to retrieve the CSRF token. This supports both GET and POST requests
 def get_csrf_token(url, type_var):
         # Local Variables
@@ -1111,6 +1128,7 @@ def get_csrf_token(url, type_var):
         else:
             csrf_token = ""    # Assign blank CSRF token as none was found
         return csrf_token    # Return our token
+
 
 # run_ssh_cmd() runs a shell command via SSH
 def run_ssh_cmd(server, cmd):
@@ -1127,6 +1145,7 @@ def run_ssh_cmd(server, cmd):
         ssh_output["ec"] = 0
         ssh_output["ssh_output"] = ssh_resp
     return ssh_output
+
 
 # get_pfsense_version() checks the version of pfSense
 def get_pfsense_version(server, user, key):
@@ -1160,6 +1179,7 @@ def get_pfsense_version(server, user, key):
             pf_version["ec"] = 15    # Set exit code 15 (permission denied)
     # Return our data dictionary
     return pf_version
+
 
 # get_permissions_table() returns a dictionary file containing all user privileges, and their POST data values
 def get_permissions_table(server, user, key):
@@ -1211,6 +1231,7 @@ def get_permissions_table(server, user, key):
             prms["ec"] = 20    # Assign exit code 20, could not locate master privilege list
     # Return our dictionary
     return prms
+
 
 # get_users() pulls information from /system_usermanager.php to gather information on all local pfSense users
 def get_users(server, user, key):
@@ -1363,6 +1384,7 @@ def get_users(server, user, key):
             users["ec"] = 15    # Assign exit code 15 (permission denied)
     return users
 
+
 # add_user() creates a new webConfigurator user in system_usernamanger.php
 def add_user(server, user, key, uname, enable, passwd, fname, exp_date, groups):
     # Local variables
@@ -1411,6 +1433,7 @@ def add_user(server, user, key, uname, enable, passwd, fname, exp_date, groups):
         user_added = exist_users["ec"]
     # Return our exit code value
     return user_added
+
 
 # del_user() deletes a user given a username or user ID
 def del_user(server, user, key, uid):
@@ -1520,6 +1543,7 @@ def add_user_key(server, user, key, uname, key_type, pub_key, destruct):
     # Return our code
     return key_added
 
+
 # change_user_passwd() changes an existing user's password
 def change_user_passwd(server, user, key, uname, passwd):
     # Local variables
@@ -1575,6 +1599,7 @@ def change_user_passwd(server, user, key, uname, passwd):
     # Return our code
     return passwd_changed
 
+
 # get_user_groups() pulls information from system_groupmanager.php and formats all data about configured user groups
 def get_user_groups(server, user, key):
     # Local variables
@@ -1611,6 +1636,7 @@ def get_user_groups(server, user, key):
             groups["ec"] = 15    # Assign exit code 15 (permission denied)
     # Return our group dictionary
     return groups
+
 
 # get_general_setup() pulls information from /system.php (this excludes webConfigurator UI preferences)
 def get_general_setup(server, user, key):
@@ -1860,6 +1886,7 @@ def get_general_setup(server, user, key):
     # Return our dictionary
     return general
 
+
 # get_general_setup_post_data() converts our advanced admin dictionary to a POST data dictionary
 def get_general_setup_post_data(dictionary):
     # Local Variables
@@ -1883,6 +1910,7 @@ def get_general_setup_post_data(dictionary):
                 post_data[key] = value  # Populate our data to our POST data
     # Return our POST data dictionary
     return post_data
+
 
 # set_system_hostname() assigns the hostname and domain value in /system.php
 def set_system_hostname(server, user, key, host, domain):
@@ -1931,6 +1959,7 @@ def set_system_hostname(server, user, key, host, domain):
         set_sys_host_ec = existing_sys_host["ec"]
     # Return our exit code
     return set_sys_host_ec
+
 
 # get_ha_sync() pulls our current HA configuration from system_hasync.php
 def get_ha_sync(server, user, key):
@@ -2000,6 +2029,7 @@ def get_ha_sync(server, user, key):
     # Return our HA sync dictionary
     return ha_sync
 
+
 # setup_hasync() configures HA availability syncing from System > HA Sync.
 def setup_hasync(server, user, key, enable_pfsync, pfsync_if, pfsync_ip, xmlsync_ip, xmlsync_uname, xmlsync_pass, xmlsync_options):
     # Local variables
@@ -2048,6 +2078,7 @@ def setup_hasync(server, user, key, enable_pfsync, pfsync_if, pfsync_ip, xmlsync
         hasync_setup = hasync_conf["ec"]
     # Return our return code
     return hasync_setup
+
 
 # get_system_advanced_admin() pulls our current configuration from System > Advanced > Admin Access and saves it to a dictionary
 def get_system_advanced_admin(server, user, key):
@@ -2229,6 +2260,7 @@ def get_system_advanced_admin(server, user, key):
     # Return our exit code
     return adv_adm
 
+
 # get_system_advanced_admin_post_data() converts our advanced admin dictionary to a POST data dictionary
 def get_system_advanced_admin_post_data(dictionary):
     # Local Variables
@@ -2251,6 +2283,7 @@ def get_system_advanced_admin_post_data(dictionary):
                 post_data[key] = value  # Populate our data to our POST data
     # Return our POST data dictionary
     return post_data
+
 
 # setup_wc() configures webConfigurator settings found in /system_advanced_admin.php
 def setup_wc(server, user, key, max_proc, redirect, hsts, auto_complete, login_msg, lockout, dns_rebind, alt_host, http_ref, tab_text):
@@ -2321,6 +2354,7 @@ def setup_wc(server, user, key, max_proc, redirect, hsts, auto_complete, login_m
         # Return our exit code
     return wc_configured
 
+
 # set_wc_port() configures webConfigurator port and protocol settings found in /system_advanced_admin.php
 def set_wc_port(server, user, key, protocol, port):
     # Local Variables
@@ -2364,6 +2398,7 @@ def set_wc_port(server, user, key, protocol, port):
             counter = counter + 1    # Increase our counter
     # Return our value
     return wc_port_configured
+
 
 # setup_ssh() configures sshd settings found in /system_advanced_admin.php
 def setup_ssh(server, user, key, enable, port, auth, forwarding):
@@ -2425,6 +2460,7 @@ def setup_ssh(server, user, key, enable, port, auth, forwarding):
     # Return our exit code
     return ssh_configured
 
+
 # setup_console_options() configures password protection of the console menu
 def setup_console(server, user, key, console_pass):
     # Local Variables
@@ -2459,6 +2495,7 @@ def setup_console(server, user, key, console_pass):
     # Return our exit code
     return console_configured
 
+
 # get_packages() reads installed packages from pfSense's UI repos
 def get_installed_packages(server, user, key):
     # Local variables
@@ -2490,17 +2527,18 @@ def get_installed_packages(server, user, key):
     # Return our dictionary
     return installed_pkgs
 
+
 # get_available_packages() pulls a list of packages that are able to be installed on pfSense
 def get_available_packages(server, user, key):
     # Local variables
     avail_pkgs = {"ec": 2, "available_pkgs": {}}    # Initialize our dictionary to track error codes and available packages
     exp_output = "pfSense-pkg"    # Define the string to check for when looking for pfSense packages
     get_avail_packages = get_shell_output(server, user, key, "pkg search -q " + exp_output)    # Get our available packages
-    get_installed_packages = get_installed_packages(server, user, key)    # Get our  installed packages
+    installed_pkgs = get_installed_packages(server, user, key)    # Get our  installed packages
     # Check that we received our available pkg output
     if get_avail_packages["ec"] == 0:
         # Check that we received our installed pkg output
-        if get_installed_packages["ec"] == 0:
+        if installed_pkgs["ec"] == 0:
             # Check that we have expected output
             if exp_output + "-" in get_avail_packages["shell_output"]:
                 pkg_str = get_avail_packages["shell_output"] + "\n"    # Add a new line so we always have a list when splitting
@@ -2515,7 +2553,7 @@ def get_available_packages(server, user, key):
                         avail_pkgs["available_pkgs"][pkg_name]["pkg"] = full_pkg
                         avail_pkgs["available_pkgs"][pkg_name]["name"] = pkg_name
                         avail_pkgs["available_pkgs"][pkg_name]["version"] = pkg_ver
-                        avail_pkgs["available_pkgs"][pkg_name]["installed"] = True if pkg_name in get_installed_packages["installed_pkgs"] else False    # Check if package is installed already
+                        avail_pkgs["available_pkgs"][pkg_name]["installed"] = True if pkg_name in installed_pkgs["installed_pkgs"] else False    # Check if package is installed already
                 # Return our success exit code
                 avail_pkgs["ec"] = 0
         # If we received an error pulling our installed packages
@@ -2526,6 +2564,7 @@ def get_available_packages(server, user, key):
         avail_pkgs["ec"] = get_avail_packages["ec"]
     # Return our exit code
     return avail_pkgs
+
 
 # add_package() adds a new pfSense package
 def add_package(server, user, key, pkg):
@@ -2556,6 +2595,7 @@ def add_package(server, user, key, pkg):
     # Return our code
     return pkg_added
 
+
 # del_package() deletes an existing pfSense package
 def del_package(server, user, key, pkg):
     # Local variables
@@ -2579,6 +2619,7 @@ def del_package(server, user, key, pkg):
         pkg_del = installed_pkgs["ec"]
     # Return our code
     return pkg_del
+
 
 # get_shell_output() executes a shell command in diag_command.php and returns it's output
 def get_shell_output(server, user, key, cmd):
@@ -2608,6 +2649,7 @@ def get_shell_output(server, user, key, cmd):
             shell_out["ec"] = 15
     # Return our data dictionary
     return shell_out
+
 
 # get_arp_table() pulls our pfSense's current ARP table
 def get_arp_table(server, user, key):
@@ -2653,6 +2695,7 @@ def get_arp_table(server, user, key):
     # Return our dictionary
     return arp_table
 
+
 # get_state_table() pulls the firewall state table via SSH or webConfigurator shell
 def get_state_table(server, user, key):
     # Local variables
@@ -2664,6 +2707,7 @@ def get_state_table(server, user, key):
     state_table["ec"] = state_table_resp["ec"]
     # Return our state table
     return state_table
+
 
 # get_xml_backup() saves pfSense's XML backup given specific parameters
 def get_xml_backup(server, user, key, area, no_pkg, no_rrd, encrypt, encrypt_pass):
@@ -2704,6 +2748,7 @@ def get_xml_backup(server, user, key, area, no_pkg, no_rrd, encrypt, encrypt_pas
     # Return our dictionary
     return xml_table
 
+
 # upload_xml_backup() uploads and restores an existing XML backup configuration
 def upload_xml_backup(server, user, key, area, conf_file, decrypt_pass):
     # Local Variables
@@ -2735,6 +2780,7 @@ def upload_xml_backup(server, user, key, area, conf_file, decrypt_pass):
     # Return our return code
     return xml_added
 
+
 # replicate_xml() copies the XML configuration from one pfSense box to another
 def replicate_xml(server, user, key, area, target_list):
     # Local variables
@@ -2761,6 +2807,7 @@ def replicate_xml(server, user, key, area, target_list):
         replicate_dict["ec"] = master_config["ec"]    # Save exit code from the failed function
     # Return our dictionary
     return replicate_dict
+
 
 # get_system_tunables() pulls the System Tunable values from the advanced settings
 def get_system_tunables(server, user, key):
@@ -2798,6 +2845,7 @@ def get_system_tunables(server, user, key):
     # Return our dictionary
     return tunables
 
+
 # add_system_tunable() adds a new system tunable
 def add_system_tunable(server, user, key, name, descr, value):
     # Local Variables
@@ -2830,6 +2878,7 @@ def add_system_tunable(server, user, key, name, descr, value):
         tunable_added = existing_tunables["ec"]    # Return the exit code that was returned by our get_existing_tunables()
     # Return our exit code
     return tunable_added
+
 
 # get_interfaces() reads config.xml for our interface configuration
 def get_interfaces_xml(server, user, key):
@@ -2898,12 +2947,13 @@ def get_interfaces_xml(server, user, key):
     # Return our dictionary
     return interfaces
 
+
 # get_interfaces() pulls existing interface configurations from interfaces_assign.php and interfaces.php
 def get_interfaces(server, user, key):
     # Local Variables
     ifaces = {"ec": 2, "ifaces": {}, "if_add": []}    # Predefine our dictionary that will track our VLAN data as well as errors
     url = PfaVar.wc_protocol + "://" + server + ":" + str(PfaVar.wc_protocol_port)    # Assign our base URL
-    ifaces_xml = pfsensexml.get_interfaces_xml(server, user, key)    # Try to pull our interfaces through XML (for speed)
+    ifaces_xml = get_interfaces_xml(server, user, key)    # Try to pull our interfaces through XML (for speed)
     # Check if we can read our interfaces via XML, if not, try via webconfigurator
     if ifaces_xml["ec"] != 0:
         err_check = check_errors(server, user, key, ["interfaces_assign.php", "interfaces.php"])    # Check for webconfigurator errors
@@ -3013,6 +3063,7 @@ def get_interfaces(server, user, key):
     # Return our data dictionary
     return ifaces
 
+
 # get_interfaces() pulls existing interface configurations from interfaces_assign.php and interfaces.php
 def get_available_interfaces(server, user, key):
     # Local Variables
@@ -3047,6 +3098,7 @@ def get_available_interfaces(server, user, key):
     # Return our ifaces dictionary
     return ifaces
 
+
 # find_interface_pfid() will search the interface dictionary and return the physical if ID, the pf ID or the descriptive ID of a interface given a value
 def find_interface_pfid(server, user, key, id_var, dct):
     # Local variables
@@ -3066,6 +3118,7 @@ def find_interface_pfid(server, user, key, id_var, dct):
         pf_id["ec"] = dct["ec"]
     # Return our dictiontary
     return pf_id
+
 
 # get_vlan_ids() pulls existing VLAN configurations from Interfaces > Assignments > VLANs
 def get_vlan_ids(server, user, key):
@@ -3105,6 +3158,7 @@ def get_vlan_ids(server, user, key):
             vlans["ec"] = 15    # Return error code 15 (permission denied)
     # Return our dictionary
     return vlans
+
 
 # add_vlan_id() creates a VLAN tagged interface provided a valid physical interface in Interfaces > Assignments > VLANs
 def add_vlan_id(server, user, key, iface, vlan_id, priority, descr):
@@ -3164,6 +3218,7 @@ def add_vlan_id(server, user, key, iface, vlan_id, priority, descr):
     # Return our exit code
     return vlan_added
 
+
 # add_auth_server_ldap() adds an LDAP server configuration to Advanced > User Mgr > Auth Servers
 def add_auth_server_ldap(server, user, key, descr_name, ldap_server, ldap_port, transport, ldap_protocol, timeout, search_scope, base_dn, auth_containers, ext_query, query, bind_anon, bind_dn, bind_pw, ldap_template, user_attr, group_attr, member_attr, rfc_2307, group_obj, encode, user_alt):
     # Local Variables
@@ -3222,6 +3277,7 @@ def add_auth_server_ldap(server, user, key, descr_name, ldap_server, ldap_port, 
     # Return our exit code
     return ldap_added
 
+
 def get_dns_entries(server, user, key):
     # Local variables
     url = PfaVar.wc_protocol + "://" + server + ":" + str(PfaVar.wc_protocol_port)    # Assign our base URL
@@ -3279,6 +3335,7 @@ def get_dns_entries(server, user, key):
     # Return our dictionary
     return dns_dict
 
+
 # add_dns_entry() performs the necessary requests to add a DNS entry to pfSense's Unbound service
 def add_dns_entry(server, user, key, host, domain, ip, descr):
     # Local Variables
@@ -3317,6 +3374,7 @@ def add_dns_entry(server, user, key, host, domain, ip, descr):
         record_added = 9    # Set return value to 9 (9 means record already existed when function started)
     # Return exit code
     return record_added
+
 
 # get_ssl_certs() pulls the list of existing certificates on a pfSense host. This function basically returns the data found on /system_certmanager.php
 def get_ssl_certs(server, user, key):
@@ -3383,6 +3441,7 @@ def get_ssl_certs(server, user, key):
             cert_manager_dict["ec"] = 15    # Return exit code 15 (permissions denied)
     # Return our data dict
     return cert_manager_dict
+
 
 # add_ssl_cert() performs the necessary requests to add an SSL certificate to pfSense's WebConfigurator
 def add_ssl_cert(server, user, key, cert, certkey, descr):
@@ -3454,6 +3513,7 @@ def add_ssl_cert(server, user, key, cert, certkey, descr):
             cert_added = 15    # Return exit code 15 (permission denied)
     # Return exit code
     return cert_added
+
 
 # set_wc_certificate() sets which WebConfigurator SSL certificate to use via /system_advanced_admin.php
 def set_wc_certificate(server, user, key, cert_name):
@@ -3554,6 +3614,7 @@ def set_wc_certificate(server, user, key, cert_name):
     # Return our exit code
     return wcc_check
 
+
 # get_firewall_rules_xml() reads ACLs via the XML config
 def get_firewall_rules_xml(server, user, key, iface):
     # Local Variables
@@ -3583,8 +3644,6 @@ def get_firewall_rules_xml(server, user, key, iface):
     # Return our dictionary
     return rules
 
-# get_firewall_rules_xml("10.7.200.2", "admin", "pfsense", "lan")
-# sys.exit()
 
 # get_firewall_rules() pulls the ACL for a specified interface and returns the rules
 def get_firewall_rules(server, user, key, iface):
@@ -3756,6 +3815,7 @@ def get_firewall_rules(server, user, key, iface):
     # Return our dictionary
     return rules
 
+
 # get_firewall_rule_state_data() reads the state data of firewall rules given an interface ACL
 def get_firewall_rule_state_data(server, user, key, iface):
     # Local variables
@@ -3818,6 +3878,7 @@ def get_firewall_rule_state_data(server, user, key, iface):
         rules["ec"] = err_check
     # Return our data
     return rules
+
 
 # add_firewall_rule() adds a new basic firewall rule to a specified interface
 def add_firewall_rule(server, user, key, iface, type_var, ipver, proto, iv_src, src, src_bit, src_port, iv_dst, dst, dst_bit, dst_port, gw, descr, log, pos, no_port):
@@ -3888,6 +3949,7 @@ def add_firewall_rule(server, user, key, iface, type_var, ipver, proto, iv_src, 
     # Return our exit code
     return rule_added
 
+
 # del_firewall_rule() removes a firewall rule entry from a specified interface's ACL
 def del_firewall_rule(server, user, key, iface, rule_id):
     # Local variables
@@ -3924,6 +3986,7 @@ def del_firewall_rule(server, user, key, iface, rule_id):
         rule_del = current_rules["ec"]
     # Return our exit code
     return rule_del
+
 
 # get_firewall_aliases() pulls aliases information from pfSense and saves it to a Python dictionary
 def get_firewall_aliases(server, user, key):
@@ -3996,6 +4059,7 @@ def get_firewall_aliases(server, user, key):
     # Return our dictionary
     return aliases
 
+
 # modify_firewall_alias() takes and existing firewall alias and changes configured values within
 def modify_firewall_alias(server, user, key, alias_name, new_values):
     # Local Variables
@@ -4044,6 +4108,7 @@ def modify_firewall_alias(server, user, key, alias_name, new_values):
             alias_modded = 4    # Return exit code 4 (alias not found)
     # Return our integer exit code
     return alias_modded
+
 
 # get_virtual_ips() reads the configured virtual IPs from firwall_virtual_ip.php
 def get_virtual_ips(server, user, key):
@@ -4155,6 +4220,7 @@ def get_virtual_ips(server, user, key):
     # Return our dictionary
     return virt_ips
 
+
 # add_virtual_ip() adds a new virtual IP to pfSense
 def add_virtual_ip(server, user, key, mode, iface, subnet, subnet_bit, expansion, vip_passwd, vhid, advbase, advskew, descr):
     # Local variables
@@ -4217,6 +4283,7 @@ def add_virtual_ip(server, user, key, mode, iface, subnet, subnet_bit, expansion
     # Return our exit code
     return vip_added
 
+
 # get_status_carp() reads the current CARP status from status_carp.php
 def get_status_carp(server, user, key):
     # Local variables
@@ -4273,6 +4340,7 @@ def get_status_carp(server, user, key):
     # Return our dictionary
     return carp
 
+
 # set_carp_maintenance() enables or disables CARP maintenance mode
 def set_carp_maintenance(server, user, key, enable):
     # Local variables
@@ -4313,6 +4381,7 @@ def set_carp_maintenance(server, user, key, enable):
         mm_added = current_carp["ec"]    # Return the exit code returned by our get_status_carp() function
     # Return our exit code
     return mm_added
+
 
 # setup_hapfsense() automates the process needed to run pfSense in full high availability
 def setup_hapfsense(server, user, key, backup_node, carp_ifs, carp_ips, carp_passwd, pfsync_if, pfsync_ip):
