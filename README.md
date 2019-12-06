@@ -337,6 +337,9 @@ Commands
         - `--read-json` (`-rf`) : Prints ARP data as JSON. _Note: This is useful for developers wanting to integrate pfsense-automator into their own scripts_
         - `--json=<directory_path>` : Exports ARP data to a JSON file given an existing directory
 ***
+- `--read-states` : Reads a dump of the firewall states table (requires access to diag_command.php)
+    - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-states`
+***
 - `--read-xml` : Reads or exports XML configuration
     - **Syntax**: `pfsense-automator <pfSense IP or hostname> --read-xml <filter> <xml_area> <pkg> <rrd> <encrypt> <encrypt_pass>`
     - **Arguments**:
