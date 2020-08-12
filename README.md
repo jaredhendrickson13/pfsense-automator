@@ -1,5 +1,6 @@
 pfSense Automator
 =========
+**THIS PROJECT IS NO LONGER IN DEVELOPMENT PLEASE USE [PFSENSE-API](https://github.com/jaredhendrickson13/pfsense-api)**<br>
 PFSENSE-AUTOMATOR - pfSense Automation command line tool<br>
 Copyright &copy; 2019 - Jared Hendrickson
 
